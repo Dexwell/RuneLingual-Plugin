@@ -103,18 +103,19 @@ public class MenuCapture
 		// swap out the translated menu action and target.
 		if(newOption != null) {
 			if (newTarget != null && !newTarget.isEmpty()) {
+				// For charImage languages, strip <col> tags — sprites carry their own color,
+				// and <col> causes the engine to double-render shadows on sprites.
+				if (plugin.getTargetLanguage().needsCharImages()) {
+					newTarget = Colors.removeNonImgTags(newTarget);
+				}
 				currentMenu.setTarget(newTarget);
 			} else {
 				// if target is empty, remove the target part of the menu entry
 				currentMenu.setTarget("");
 			}
-			// Strip color tags from the option text to preserve the native yellow hover highlight.
-			// In vanilla OSRS, menu option text has no color tags — the client controls the color
-			// (including the yellow highlight on hover). Explicit <col> tags override this behavior.
-			// For charImage languages, the option contains <img> tags which must be preserved.
-			if (!plugin.getTargetLanguage().needsCharImages()) {
-				newOption = Colors.removeNonImgTags(newOption);
-			}
+			// Strip color tags from option text. For non-charImage, this preserves native
+			// yellow hover highlight. For charImage, it prevents engine double-shadow on sprites.
+			newOption = Colors.removeNonImgTags(newOption);
 			currentMenu.setOption(newOption);
 		}
 	}
@@ -556,6 +557,11 @@ public class MenuCapture
 			String levelTranslation = transformer.transform(levelQuery.getEnglish(), color, option, levelQuery, false);
 			String openBracket = transformer.transform("(", color, TransformOption.AS_IS, null, false);
 			String lvAndCloseBracket = transformer.transform(level+")", color, TransformOption.AS_IS, null, false);
+			if (plugin.getConfig().getSelectedLanguage().needsCharImages()) {
+				// Don't wrap sprites in <col> — color is in sprite selection,
+				// and <col> causes the engine to double-render shadows
+				return "  " + openBracket + levelTranslation + lvAndCloseBracket;
+			}
 			return "  " + color.getColorTag() + openBracket  + levelTranslation + color.getColorTag() + lvAndCloseBracket;
 		} else if(plugin.getConfig().getMenuOptionConfig() == ingameTranslationConfig.USE_API) {
 			String numberPart = levelString.replaceAll("[^0-9]", "");
@@ -567,9 +573,15 @@ public class MenuCapture
 					color = color.getSimpleColor();
 					GeneralFunctions generalFunctions = plugin.getGeneralFunctions();
 					String placeholderPart = generalFunctions.StringToTags("%d", color);
-					translation4Level = " (" + generalFunctions.StringToTags(translation4Level, color) + ")";
-					translation4Level = translation4Level.replace(placeholderPart, numberPart);
-					translation4Level = Colors.surroundWithColorTag(translation4Level, color);
+					String spriteText = generalFunctions.StringToTags(translation4Level, color);
+					// Replace sprite placeholder with colored native number text
+					spriteText = spriteText.replace(placeholderPart,
+							color.getColorTag() + numberPart + "</col>");
+					// Wrap parens in <col> but keep sprites outside <col> to avoid
+					// engine double-rendering shadows on sprites
+					translation4Level = " " + color.getColorTag() + "(</col>"
+							+ spriteText
+							+ color.getColorTag() + ")</col>";
 				} else {
 					translation4Level = " (" + translation4Level.replace("%d", numberPart) + ")";
 					translation4Level = Colors.surroundWithColorTag(translation4Level, color);
@@ -770,13 +782,15 @@ public class MenuCapture
 			}
 		}
 		if (!isOptionPending){
-			// Strip color tags from option to preserve native yellow hover highlight
-			if (!plugin.getTargetLanguage().needsCharImages()) {
-				newOption = Colors.removeNonImgTags(newOption);
-			}
+			// Strip <col> tags to prevent engine double-shadow (charImage) or
+			// to preserve native yellow hover highlight (non-charImage)
+			newOption = Colors.removeNonImgTags(newOption);
 			currentMenu.setOption(newOption);
 		}
 		if (!isTargetPending){
+			if (plugin.getTargetLanguage().needsCharImages()) {
+				newTarget = Colors.removeNonImgTags(newTarget);
+			}
 			currentMenu.setTarget(newTarget);
 		}
 		if (isOptionPending && isTargetPending){
@@ -831,8 +845,12 @@ public class MenuCapture
 				newOption = transformer.stringToDisplayedString(newOption, targetColor);
 			}
 		}
-		// Strip color tags from option to preserve native yellow hover highlight
-		if (newOption != null && !plugin.getTargetLanguage().needsCharImages()) {
+		// Strip <col> tags to prevent engine double-shadow (charImage) or
+		// to preserve native yellow hover highlight (non-charImage)
+		if (plugin.getTargetLanguage().needsCharImages()) {
+			if (newOption != null) newOption = Colors.removeNonImgTags(newOption);
+			if (newTarget != null) newTarget = Colors.removeNonImgTags(newTarget);
+		} else if (newOption != null) {
 			newOption = Colors.removeNonImgTags(newOption);
 		}
 		if (type.equals(PendingTranslationType.BOTH) && newOption != null && newTarget != null){

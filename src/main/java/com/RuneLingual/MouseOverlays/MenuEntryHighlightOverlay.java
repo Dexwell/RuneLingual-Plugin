@@ -54,6 +54,7 @@ public class MenuEntryHighlightOverlay extends Overlay {
      * Build a mapping from any registered img index to the yellow sprite for the same codepoint.
      * e.g. if charIds has "white--3021.png" -> imgIndex 42 and "yellow--3021.png" -> imgIndex 87,
      * then toYellowMap[42] = 87.
+     * Only maps default (shadow) sprites; noshadow variants are used only in dialogue.
      */
     private void buildColorSwapMap() {
         toYellowMap = new HashMap<>();
@@ -64,15 +65,17 @@ public class MenuEntryHighlightOverlay extends Overlay {
             return;
         }
 
-        // First pass: collect all yellow sprites by codepoint
-        // Key: codepoint string (e.g. "3021"), Value: chatIconIndex for yellow sprite
+        // First pass: collect yellow sprites by codepoint
+        // "yellow--3021.png" → key "3021"
         Map<String, Integer> yellowByCodepoint = new HashMap<>();
         for (Map.Entry<String, Integer> entry : charIds.entrySet()) {
-            String imageName = entry.getKey(); // e.g. "yellow--3021.png"
-            int hash = entry.getValue();
+            String imageName = entry.getKey();
+            // Skip noshadow variants — they are only used in dialogue, not menus
+            if (imageName.startsWith("noshadow_")) continue;
+
             if (imageName.startsWith("yellow--")) {
-                String codepoint = imageName.substring("yellow--".length(), imageName.length() - 4); // strip "yellow--" and ".png"
-                int imgIndex = chatIconManager.chatIconIndex(hash);
+                String codepoint = imageName.substring("yellow--".length(), imageName.length() - 4);
+                int imgIndex = chatIconManager.chatIconIndex(entry.getValue());
                 if (imgIndex >= 0) {
                     yellowByCodepoint.put(codepoint, imgIndex);
                 }
@@ -82,12 +85,12 @@ public class MenuEntryHighlightOverlay extends Overlay {
         // Second pass: map every non-yellow sprite to its yellow equivalent
         for (Map.Entry<String, Integer> entry : charIds.entrySet()) {
             String imageName = entry.getKey();
-            int hash = entry.getValue();
-            // Extract codepoint from any color: "colorName--codepoint.png"
+            if (imageName.startsWith("noshadow_")) continue;
+
             int dashIdx = imageName.indexOf("--");
             if (dashIdx < 0) continue;
             String codepoint = imageName.substring(dashIdx + 2, imageName.length() - 4);
-            int srcImgIndex = chatIconManager.chatIconIndex(hash);
+            int srcImgIndex = chatIconManager.chatIconIndex(entry.getValue());
             Integer yellowImgIndex = yellowByCodepoint.get(codepoint);
             if (srcImgIndex >= 0 && yellowImgIndex != null) {
                 toYellowMap.put(srcImgIndex, yellowImgIndex);
