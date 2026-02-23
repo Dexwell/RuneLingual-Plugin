@@ -108,6 +108,13 @@ public class MenuCapture
 				// if target is empty, remove the target part of the menu entry
 				currentMenu.setTarget("");
 			}
+			// Strip color tags from the option text to preserve the native yellow hover highlight.
+			// In vanilla OSRS, menu option text has no color tags — the client controls the color
+			// (including the yellow highlight on hover). Explicit <col> tags override this behavior.
+			// For charImage languages, the option contains <img> tags which must be preserved.
+			if (!plugin.getTargetLanguage().needsCharImages()) {
+				newOption = Colors.removeNonImgTags(newOption);
+			}
 			currentMenu.setOption(newOption);
 		}
 	}
@@ -763,6 +770,10 @@ public class MenuCapture
 			}
 		}
 		if (!isOptionPending){
+			// Strip color tags from option to preserve native yellow hover highlight
+			if (!plugin.getTargetLanguage().needsCharImages()) {
+				newOption = Colors.removeNonImgTags(newOption);
+			}
 			currentMenu.setOption(newOption);
 		}
 		if (!isTargetPending){
@@ -819,6 +830,10 @@ public class MenuCapture
 			if (newOption != null) {
 				newOption = transformer.stringToDisplayedString(newOption, targetColor);
 			}
+		}
+		// Strip color tags from option to preserve native yellow hover highlight
+		if (newOption != null && !plugin.getTargetLanguage().needsCharImages()) {
+			newOption = Colors.removeNonImgTags(newOption);
 		}
 		if (type.equals(PendingTranslationType.BOTH) && newOption != null && newTarget != null){
 			remove = true;
