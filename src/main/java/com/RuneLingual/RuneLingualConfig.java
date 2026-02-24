@@ -72,7 +72,7 @@ public interface RuneLingualConfig extends Config {
     String SECTION_DEBUGGING = "debugging";
 
     @ConfigItem(
-            name = "\uD83D\uDDE3\uD83D\uDCAC\uD83C\uDF10",
+            name = "Target",
             description = "Select the language to be translated to",
             keyName = "targetLang",
             position = offset_section1,
