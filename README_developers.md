@@ -31,6 +31,88 @@ These files include:
    1. A list of texts and their translation by the DeepL API, which will be used instead of API calls to save translation credits.
    2. A text file whose file name includes the user's selected language to load the side panel in that language. e.g 'setLang_ja.txt' for Japanese.
 
+## 3b. Character Sprite System (Non-Latin Languages)
+
+Languages that use non-Latin characters (e.g. Japanese, Chinese) require character sprites — small images of each glyph that are registered as chat icons and rendered inline via `<img=N>` tags. The plugin supports two modes for loading these sprites.
+
+### Multi-Font Mode (Recommended)
+
+When font subdirectories exist under `char_{langCode}/`, the plugin enters multi-font mode. Each subdirectory contains **white** character sprites named by Unicode codepoint only (e.g. `3042.png`). The plugin tints these to all 8 needed colors (black, blue, green, lightblue, orange, red, white, yellow) at runtime.
+
+**Directory structure:**
+```
+char_ja/
+├── plain12/          # UI font (menus, chatbox, overhead)
+│   ├── 3042.png      # Unicode codepoint for あ — white on transparent
+│   ├── 3043.png
+│   └── ...
+├── bold12/           # Bold UI font
+│   ├── 3042.png
+│   └── ...
+└── quill8/           # Dialogue font (NPC/player conversations)
+    ├── 3042.png
+    └── ...
+```
+
+**Key points:**
+- Source sprites must be **white glyphs on a transparent background** — no color prefix in the filename, just `{codepoint}.png`
+- **Pixel fonts are strongly recommended.** Anti-aliased or vector-rendered fonts don't work well with the multiply-blend tinting and clash with OSRS's pixel art aesthetic. Use bitmap/pixel fonts for best results.
+- **UI fonts** (plain11, plain12, bold12) receive a 1px drop shadow for readability against game backgrounds
+- **Dialogue fonts** (quill, quill8) are rendered without shadows, matching OSRS dialogue style
+- The default font (preference: plain12 > plain11 > bold12) is also registered under unprefixed keys for backward compatibility
+- If plain12 exists but plain11 doesn't, plain12 sprites are also registered under `plain11:` keys
+
+**Known OSRS fonts and their IDs:**
+
+| Font     | Font ID | Typical Size | Type     |
+|----------|---------|-------------|----------|
+| plain11  | 494     | 5px         | UI       |
+| plain12  | 495     | 6px         | UI       |
+| bold12   | 496     | 7px         | UI       |
+| quill    | —       | —           | Dialogue |
+| quill8   | —       | 8px         | Dialogue |
+
+### Legacy Mode (Backward Compatible)
+
+If no font subdirectories are found, the plugin loads pre-colored PNGs from the flat `char_{langCode}/` directory. These are the old-format files like `yellow--3042.png`, `black--3042.png`, etc. The plugin adds drop shadows and registers noshadow variants automatically.
+
+**You do not need to keep pre-colored sprite sets when using multi-font mode.** Only the white source sprites in font subdirectories are needed — all colors are generated at runtime.
+
+### Generating Sprites
+
+Use the included `scripts/generate_sprites.py` to create white sprite PNGs from a font file:
+
+```bash
+# Generate sprites for a single font
+python scripts/generate_sprites.py \
+    --font-file /path/to/PixelFont.ttf \
+    --font plain12 \
+    --size 12 \
+    --codepoints codepoints_ja.txt \
+    --output ./char_ja/plain12/
+
+# Generate for all known fonts at once
+python scripts/generate_sprites.py \
+    --font-file /path/to/PixelFont.ttf \
+    --font all \
+    --codepoints codepoints_ja.txt \
+    --output ./char_ja/
+```
+
+The codepoints file lists one Unicode codepoint per line (decimal or `0x` hex):
+```
+3042
+0x3043
+12354
+# Lines starting with # are comments
+```
+
+**Important:** The script outputs files named `{codepoint}.png` — just the decimal codepoint, no color prefix. This is the expected format for multi-font mode.
+
+### OSRS Transparency Note
+
+OSRS treats pure black `RGB(0,0,0)` as transparent. The plugin uses near-black `RGB(1,1,1)` for the "black" tint color and clamps all tinted RGB channels to a minimum of 1 to avoid accidental transparency.
+
 ## 4. Limitations
 
 - The plugin cannot translate texts that are not widgets or menu entries, such as texts on the world map.
