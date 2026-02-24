@@ -241,6 +241,29 @@ public class RuneLingualPlugin extends Plugin {
 
         chatInputRLingual.updateChatInput();
         widgetCapture.translateWidget();
+
+        // When English hover text is disabled, replace the top menu entry's
+        // option/target with translated text before the game draws it.
+        if (!config.getEnableEnglishHoverConfig() && !client.isMenuOpen()) {
+            MenuEntry[] menuEntries = client.getMenuEntries();
+            if (menuEntries.length > 0) {
+                MenuEntry top = menuEntries[menuEntries.length - 1];
+                String option = top.getOption();
+                if (option != null && !option.isEmpty()
+                        && !option.equals("Walk here") && !option.equals("Cancel") && !option.equals("Continue")) {
+                    String[] translated = menuCapture.translateMenuAction(top);
+                    if (translated != null) {
+                        if (targetLanguage.needsSwapMenuOptionAndTarget()) {
+                            top.setOption(translated[0] != null && !translated[0].isEmpty() ? translated[0] : translated[1]);
+                            top.setTarget(translated[0] != null && !translated[0].isEmpty() ? translated[1] : "");
+                        } else {
+                            top.setOption(translated[1]);
+                            top.setTarget(translated[0] != null ? translated[0] : "");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @Subscribe

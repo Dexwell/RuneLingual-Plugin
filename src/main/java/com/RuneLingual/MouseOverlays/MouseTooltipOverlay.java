@@ -166,6 +166,14 @@ public class MouseTooltipOverlay extends Overlay
             newTarget = newMenus[0];
             newOption = newMenus[1];
         }
+
+        // When English hover is disabled, the menu entry text is replaced in
+        // onBeforeRender (RuneLingualPlugin), so skip adding a tooltip here.
+        if (!config.getEnableEnglishHoverConfig())
+        {
+            return;
+        }
+
         if (this.plugin.getTargetLanguage().needsSwapMenuOptionAndTarget())
         {
             tooltipManager.addFront(new Tooltip((Strings.isNullOrEmpty(newTarget) ? newOption : newTarget + " " + newOption)));

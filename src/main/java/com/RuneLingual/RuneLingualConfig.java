@@ -238,6 +238,17 @@ public interface RuneLingualConfig extends Config {
     }
 
     @ConfigItem(
+            name = "Enable English Hover Text",
+            description = "Show the original English hover text alongside translated hover text",
+            position = 10 + offset_section2,
+            keyName = "enableEnglishHover",
+            section = SECTION_GAME_SYSTEM_TEXT
+    )
+    default boolean getEnableEnglishHoverConfig() {
+        return true;
+    }
+
+    @ConfigItem(
             name = "Public",
             description = "Option for public chat messages",
             position = 3 + offset_section3,
