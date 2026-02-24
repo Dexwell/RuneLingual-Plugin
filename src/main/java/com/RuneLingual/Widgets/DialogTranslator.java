@@ -5,6 +5,7 @@ import com.RuneLingual.SQL.SqlQuery;
 import com.RuneLingual.commonFunctions.Colors;
 import com.RuneLingual.commonFunctions.Transformer;
 import com.RuneLingual.commonFunctions.Transformer.TransformOption;
+import com.RuneLingual.nonLatin.CharImageInit;
 import com.RuneLingual.nonLatin.GeneralFunctions;
 
 import lombok.Getter;
@@ -76,6 +77,8 @@ public class DialogTranslator {
     @Inject
     private GeneralFunctions generalFunctions;
     @Inject
+    private CharImageInit charImageInit;
+    @Inject
     private WidgetsUtilRLingual widgetsUtilRLingual;
 
     private static final Pattern IMG_TAG_PATTERN = Pattern.compile("<img=(\\d+)>");
@@ -138,9 +141,44 @@ public class DialogTranslator {
         return sb.toString();
     }
 
-    /** Set widget text, swapping to noshadow sprites for dialogue. */
+    /**
+     * Get the dialogue font name if multi-font mode is active and a dialogue font is available.
+     * Returns "quill8" or "quill" if available, null otherwise (fall back to noshadow swap).
+     */
+    private String getDialogueFont() {
+        if (!charImageInit.isMultiFontMode()) return null;
+        if (charImageInit.hasFontAvailable("quill8")) return "quill8";
+        if (charImageInit.hasFontAvailable("quill")) return "quill";
+        return null; // no dialogue font available; will fall back to noshadow swap
+    }
+
+    /** Set widget text, using dialogue font sprites or noshadow swap for dialogue. */
     private void setDialogText(Widget widget, String text) {
-        widget.setText(swapToNoShadow(text));
+        if (getDialogueFont() != null) {
+            // Multi-font mode with dialogue font: sprites were already rendered
+            // with the correct font via setCurrentFont(), no swap needed
+            widget.setText(text);
+        } else {
+            // Legacy or single-font mode: swap shadow sprites to noshadow variants
+            widget.setText(swapToNoShadow(text));
+        }
+    }
+
+    /**
+     * Set the dialogue font context before translation calls, and reset after.
+     * When a dialogue font (quill8/quill) is available in multi-font mode,
+     * StringToTags will use that font's sprites (which have no drop shadow).
+     */
+    private void setDialogueFontContext() {
+        String dialogueFont = getDialogueFont();
+        if (dialogueFont != null) {
+            generalFunctions.setCurrentFont(dialogueFont);
+        }
+    }
+
+    /** Reset the font context back to default after dialogue translation. */
+    private void resetFontContext() {
+        generalFunctions.setCurrentFont(null);
     }
 
     public void handleDialogs(Widget widget) {
@@ -159,7 +197,12 @@ public class DialogTranslator {
         // if the widget is the npc name widget, and the config is set to use api translation
         if (npcNameOption.equals(TransformOption.TRANSLATE_API) && widget.getId() == npcNameWidgetId) {
             String npcName = widget.getText();
-            widgetsUtilRLingual.setWidgetText_ApiTranslation(widget, npcName, nameAndSelectOptionTextColor);
+            setDialogueFontContext();
+            try {
+                widgetsUtilRLingual.setWidgetText_ApiTranslation(widget, npcName, nameAndSelectOptionTextColor);
+            } finally {
+                resetFontContext();
+            }
             // Dialogue uses a different font style without drop shadows
             setDialogText(widget, widget.getText());
             return;
@@ -176,7 +219,12 @@ public class DialogTranslator {
             else if(widget.getId() == dialogOptionWidgetId && widget.getText().equals(selectOptionText))
                 textColor[0] = nameAndSelectOptionTextColor;
 
-            widgetsUtilRLingual.setWidgetText_ApiTranslation(widget, dialogText, textColor[0]);
+            setDialogueFontContext();
+            try {
+                widgetsUtilRLingual.setWidgetText_ApiTranslation(widget, dialogText, textColor[0]);
+            } finally {
+                resetFontContext();
+            }
             // Dialogue uses a different font style without drop shadows
             setDialogText(widget, widget.getText());
             return;
@@ -207,8 +255,14 @@ public class DialogTranslator {
 
             SqlQuery query = new SqlQuery(this.plugin);
             query.setNpcName(npcName, nameAndSelectOptionTextColor);
-            String translatedText = transformer.transform(npcName, nameAndSelectOptionTextColor,
-                    npcNameOption, query, false);
+            setDialogueFontContext();
+            String translatedText;
+            try {
+                translatedText = transformer.transform(npcName, nameAndSelectOptionTextColor,
+                        npcNameOption, query, false);
+            } finally {
+                resetFontContext();
+            }
             setDialogText(widget, translatedText);
         } else if (widget.getId() == npcContinueWidgetId) {
             translateContinueWidget(widget);
@@ -218,8 +272,18 @@ public class DialogTranslator {
             String npcName = getInteractingNpcName();
             SqlQuery query = new SqlQuery(this.plugin);
             query.setDialogue(npcContent, npcName, false, defaultTextColor);
-            String translatedText = transformer.transform(npcContent, defaultTextColor, dialogOption, query, false);
-            widgetsUtilRLingual.setWidgetText_NiceBr(widget, swapToNoShadow(translatedText));
+            setDialogueFontContext();
+            String translatedText;
+            try {
+                translatedText = transformer.transform(npcContent, defaultTextColor, dialogOption, query, false);
+            } finally {
+                resetFontContext();
+            }
+            if (getDialogueFont() != null) {
+                widgetsUtilRLingual.setWidgetText_NiceBr(widget, translatedText);
+            } else {
+                widgetsUtilRLingual.setWidgetText_NiceBr(widget, swapToNoShadow(translatedText));
+            }
             widgetsUtilRLingual.changeLineHeight(widget);
         }
     }
@@ -241,8 +305,18 @@ public class DialogTranslator {
 
             SqlQuery query = new SqlQuery(this.plugin);
             query.setDialogue(playerContent, npcName, true, defaultTextColor);
-            String translatedText = transformer.transform(playerContent, defaultTextColor, dialogOption, query, false);
-            widgetsUtilRLingual.setWidgetText_NiceBr(widget, swapToNoShadow(translatedText));
+            setDialogueFontContext();
+            String translatedText;
+            try {
+                translatedText = transformer.transform(playerContent, defaultTextColor, dialogOption, query, false);
+            } finally {
+                resetFontContext();
+            }
+            if (getDialogueFont() != null) {
+                widgetsUtilRLingual.setWidgetText_NiceBr(widget, translatedText);
+            } else {
+                widgetsUtilRLingual.setWidgetText_NiceBr(widget, swapToNoShadow(translatedText));
+            }
             widgetsUtilRLingual.changeLineHeight(widget);
         }
         // player name does not need to be translated
@@ -262,8 +336,18 @@ public class DialogTranslator {
         dialogOption = removeBrAndTags(dialogOption);
         SqlQuery query = new SqlQuery(this.plugin);
         query.setDialogue(dialogOption, getInteractingNpcName(), false, defaultTextColor);
-        String translatedText = transformer.transform(dialogOption, defaultTextColor, this.dialogOption, query, false);
-        widgetsUtilRLingual.setWidgetText_NiceBr(widget, swapToNoShadow(translatedText));
+        setDialogueFontContext();
+        String translatedText;
+        try {
+            translatedText = transformer.transform(dialogOption, defaultTextColor, this.dialogOption, query, false);
+        } finally {
+            resetFontContext();
+        }
+        if (getDialogueFont() != null) {
+            widgetsUtilRLingual.setWidgetText_NiceBr(widget, translatedText);
+        } else {
+            widgetsUtilRLingual.setWidgetText_NiceBr(widget, swapToNoShadow(translatedText));
+        }
         widgetsUtilRLingual.changeLineHeight(widget);
     }
 
@@ -278,19 +362,34 @@ public class DialogTranslator {
     private String getContinueTranslation() {
         SqlQuery query = new SqlQuery(this.plugin);
         query.setDialogue(continueText, "", true, continueTextColor);
-        return transformer.transform(continueText, continueTextColor, dialogOption, query, false);
+        setDialogueFontContext();
+        try {
+            return transformer.transform(continueText, continueTextColor, dialogOption, query, false);
+        } finally {
+            resetFontContext();
+        }
     }
 
     private String getSelectOptionTranslation() {
         SqlQuery query = new SqlQuery(this.plugin);
         query.setDialogue(selectOptionText, "", true, nameAndSelectOptionTextColor);
-        return transformer.transform(selectOptionText, nameAndSelectOptionTextColor, dialogOption, query, false);
+        setDialogueFontContext();
+        try {
+            return transformer.transform(selectOptionText, nameAndSelectOptionTextColor, dialogOption, query, false);
+        } finally {
+            resetFontContext();
+        }
     }
 
     private String getPleaseWaitTranslation() {
         SqlQuery query = new SqlQuery(this.plugin);
         query.setDialogue(pleaseWaitText, "", true, pleaseWaitTextColor);
-        return transformer.transform(pleaseWaitText, pleaseWaitTextColor, dialogOption, query, false);
+        setDialogueFontContext();
+        try {
+            return transformer.transform(pleaseWaitText, pleaseWaitTextColor, dialogOption, query, false);
+        } finally {
+            resetFontContext();
+        }
     }
 
     private void translateContinueWidget(Widget widget) {

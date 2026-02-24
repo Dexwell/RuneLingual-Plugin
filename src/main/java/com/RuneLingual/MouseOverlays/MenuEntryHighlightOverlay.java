@@ -66,12 +66,15 @@ public class MenuEntryHighlightOverlay extends Overlay {
         }
 
         // First pass: collect yellow sprites by codepoint
-        // "yellow--3021.png" → key "3021"
+        // Only use unprefixed (default font) entries; skip font-prefixed (e.g. "plain12:yellow--3021.png")
+        // and noshadow variants since menus always use the default shadowed sprites.
         Map<String, Integer> yellowByCodepoint = new HashMap<>();
         for (Map.Entry<String, Integer> entry : charIds.entrySet()) {
             String imageName = entry.getKey();
             // Skip noshadow variants — they are only used in dialogue, not menus
             if (imageName.startsWith("noshadow_")) continue;
+            // Skip font-prefixed entries (e.g. "plain12:yellow--3021.png") — only use default font
+            if (imageName.contains(":")) continue;
 
             if (imageName.startsWith("yellow--")) {
                 String codepoint = imageName.substring("yellow--".length(), imageName.length() - 4);
@@ -82,10 +85,11 @@ public class MenuEntryHighlightOverlay extends Overlay {
             }
         }
 
-        // Second pass: map every non-yellow sprite to its yellow equivalent
+        // Second pass: map every non-yellow default sprite to its yellow equivalent
         for (Map.Entry<String, Integer> entry : charIds.entrySet()) {
             String imageName = entry.getKey();
             if (imageName.startsWith("noshadow_")) continue;
+            if (imageName.contains(":")) continue;
 
             int dashIdx = imageName.indexOf("--");
             if (dashIdx < 0) continue;

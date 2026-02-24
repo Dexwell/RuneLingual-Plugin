@@ -17,8 +17,28 @@ public class GeneralFunctions {
     @Inject
     private RuneLingualPlugin runeLingualPlugin;
 
+    /** Current font context for StringToTags calls going through Transformer. */
+    private String currentFont = null;
+
+    /** Set the font context for subsequent StringToTags calls. Set to null for default font. */
+    public void setCurrentFont(String fontName) {
+        this.currentFont = fontName;
+    }
+
+    /** Get the current font context. */
+    public String getCurrentFont() {
+        return currentFont;
+    }
 
     public String StringToTags(String string, Colors colors) {
+        return StringToTags(string, colors, currentFont);
+    }
+
+    /**
+     * Font-aware version: looks up sprites with font prefix first, falls back to unprefixed.
+     * When fontName is null, only unprefixed lookup is used (backward compatible).
+     */
+    public String StringToTags(String string, Colors colors, String fontName) {
         /*
         This function takes a string + color and returns emojis that looks like letters
         But leave <img=??> tags as they are (they are already emojis).
@@ -62,11 +82,21 @@ public class GeneralFunctions {
                     continue;
                 }
                 String imgName = colors.getName() + "--" + codePoint + ".png";
-                int hash = map.getOrDefault(imgName, -99);
+
+                // Font-aware lookup: try font-prefixed key first, fall back to unprefixed
+                int hash = -99;
+                if (fontName != null) {
+                    hash = map.getOrDefault(fontName + ":" + imgName, -99);
+                }
+                if (hash == -99) {
+                    hash = map.getOrDefault(imgName, -99);
+                }
+
                 if (hash == -99) {//if the char is not in the hashmap, append a question mark
                     imgTagStrings.append("?");
                     j += Character.isHighSurrogate(part.charAt(j)) ? 2 : 1;
                     log.error("Char not found in hashmap: {}", part.charAt(j));
+                    continue; // bug fix: was missing this continue — would fall through to append invalid img tag
                 }
                 imgTagStrings.append("<img=");
                 imgTagStrings.append(chatIconManager.chatIconIndex(hash));
