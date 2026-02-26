@@ -164,21 +164,27 @@ public class DialogTranslator {
         }
     }
 
+    /** Saved font context to restore after dialogue translation. */
+    private String savedFontContext = null;
+
     /**
      * Set the dialogue font context before translation calls, and reset after.
      * When a dialogue font (quill8/quill) is available in multi-font mode,
      * StringToTags will use that font's sprites (which have no drop shadow).
+     * Saves the previous font context so it can be restored by resetFontContext().
      */
     private void setDialogueFontContext() {
+        savedFontContext = generalFunctions.getCurrentFont();
         String dialogueFont = getDialogueFont();
         if (dialogueFont != null) {
             generalFunctions.setCurrentFont(dialogueFont);
         }
     }
 
-    /** Reset the font context back to default after dialogue translation. */
+    /** Restore the font context that was active before setDialogueFontContext(). */
     private void resetFontContext() {
-        generalFunctions.setCurrentFont(null);
+        generalFunctions.setCurrentFont(savedFontContext);
+        savedFontContext = null;
     }
 
     public void handleDialogs(Widget widget) {

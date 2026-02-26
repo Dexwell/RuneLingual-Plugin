@@ -18,6 +18,7 @@ import javax.imageio.ImageIO;
 import javax.inject.Inject;
 
 @Slf4j
+@javax.inject.Singleton
 public class CharImageInit {
     @Inject
     RuneLingualPlugin runeLingualPlugin;
@@ -111,13 +112,15 @@ public class CharImageInit {
 
     /**
      * Determine the default font from available font directories.
-     * Preference: plain12 > plain11 > bold12 > first available.
+     * Preference: bold12 > plain12 > plain11 > first available.
+     * bold12 is preferred because OSRS uses it for menus, hover text,
+     * and most UI elements. plain12 is for longer body text (widgets, chat).
      */
     private String determineDefaultFont(String[] fontDirs) {
         Set<String> available = new LinkedHashSet<>(Arrays.asList(fontDirs));
+        if (available.contains("bold12")) return "bold12";
         if (available.contains("plain12")) return "plain12";
         if (available.contains("plain11")) return "plain11";
-        if (available.contains("bold12")) return "bold12";
         return fontDirs[0]; // fallback to first found
     }
 

@@ -11,6 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Slf4j
+@javax.inject.Singleton
 public class GeneralFunctions {
     @Inject
     private CharImageInit charImageInit;
@@ -20,6 +21,9 @@ public class GeneralFunctions {
     /** Current font context for StringToTags calls going through Transformer. */
     private String currentFont = null;
 
+    /** Whether to use shadowed sprites (true) or noshadow sprites (false). Default true. */
+    private boolean currentUseShadow = true;
+
     /** Set the font context for subsequent StringToTags calls. Set to null for default font. */
     public void setCurrentFont(String fontName) {
         this.currentFont = fontName;
@@ -28,6 +32,16 @@ public class GeneralFunctions {
     /** Get the current font context. */
     public String getCurrentFont() {
         return currentFont;
+    }
+
+    /** Set whether to use shadowed or noshadow sprites. */
+    public void setCurrentUseShadow(boolean useShadow) {
+        this.currentUseShadow = useShadow;
+    }
+
+    /** Get current shadow preference. */
+    public boolean isCurrentUseShadow() {
+        return currentUseShadow;
     }
 
     public String StringToTags(String string, Colors colors) {
@@ -83,13 +97,26 @@ public class GeneralFunctions {
                 }
                 String imgName = colors.getName() + "--" + codePoint + ".png";
 
-                // Font-aware lookup: try font-prefixed key first, fall back to unprefixed
+                // Font-aware lookup: try font-prefixed key first, fall back to unprefixed.
+                // Use noshadow when: currentUseShadow is false, OR color is black
+                // (black shadow behind black text is invisible and just makes text look thicker).
+                boolean wantNoShadow = !currentUseShadow || colors.getName().startsWith("black");
                 int hash = -99;
                 if (fontName != null) {
-                    hash = map.getOrDefault(fontName + ":" + imgName, -99);
+                    if (wantNoShadow) {
+                        hash = map.getOrDefault("noshadow_" + fontName + ":" + imgName, -99);
+                    }
+                    if (hash == -99) {
+                        hash = map.getOrDefault(fontName + ":" + imgName, -99);
+                    }
                 }
                 if (hash == -99) {
-                    hash = map.getOrDefault(imgName, -99);
+                    if (wantNoShadow) {
+                        hash = map.getOrDefault("noshadow_" + imgName, -99);
+                    }
+                    if (hash == -99) {
+                        hash = map.getOrDefault(imgName, -99);
+                    }
                 }
 
                 if (hash == -99) {//if the char is not in the hashmap, append a question mark

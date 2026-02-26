@@ -7,6 +7,8 @@ import com.RuneLingual.SQL.SqlVariables;
 import com.RuneLingual.commonFunctions.Colors;
 import com.RuneLingual.commonFunctions.Ids;
 import com.RuneLingual.commonFunctions.Transformer;
+import com.RuneLingual.nonLatin.CharImageInit;
+import com.RuneLingual.nonLatin.GeneralFunctions;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -35,6 +37,10 @@ public class WidgetCapture {
     private DialogTranslator dialogTranslator;
     @Inject
     private Ids ids;
+    @Inject
+    private CharImageInit charImageInit;
+    @Inject
+    private GeneralFunctions generalFunctions;
     @Getter
     Set<String> pastTranslationResults = new HashSet<>();
 
@@ -50,10 +56,19 @@ public class WidgetCapture {
          && plugin.getConfig().getNpcDialogueConfig() == RuneLingualConfig.ingameTranslationConfig.DONT_TRANSLATE) {
             return;
         }
-        Widget[] roots = client.getWidgetRoots();
-        SqlQuery sqlQuery = new SqlQuery(this.plugin);
-        for (Widget root : roots) {
-            translateWidgetRecursive(root, sqlQuery);
+        // Use plain12 font for widget/interface text (dialogue handler overrides with its own font)
+        if (charImageInit.isMultiFontMode() && charImageInit.hasFontAvailable("plain12")) {
+            generalFunctions.setCurrentFont("plain12");
+        }
+        try {
+            Widget[] roots = client.getWidgetRoots();
+            SqlQuery sqlQuery = new SqlQuery(this.plugin);
+            for (Widget root : roots) {
+                translateWidgetRecursive(root, sqlQuery);
+            }
+        } finally {
+            generalFunctions.setCurrentFont(null);
+            generalFunctions.setCurrentUseShadow(true); // reset to default
         }
     }
 
@@ -224,6 +239,20 @@ public class WidgetCapture {
 
     private void translateWidgetText(Widget widget, SqlQuery sqlQuery) {
         int widgetId = widget.getId();
+
+        // Tooltip widgets on light backgrounds (skill tab, XP bar) should use noshadow sprites.
+        // Shadow makes text look thicker/bolder and is hard to read on light backgrounds.
+        // Check both the widget itself AND its ancestors, because the tooltip container (Stats.TOOLTIP)
+        // is type=0 with empty text — the actual text is in child widgets with different IDs.
+        boolean isTooltipWidget = ids.getWidgetId2SplitTextAtBr().contains(widgetId)
+                || isChildWidgetOf(widget, ids.getWidgetId2SplitTextAtBr());
+        if (isTooltipWidget) {
+            generalFunctions.setCurrentUseShadow(false);
+        } else {
+            // Set shadow flag per-widget so StringToTags uses noshadow sprites
+            // for unshadowed widgets
+            generalFunctions.setCurrentUseShadow(widget.getTextShadowed());
+        }
         String originalText = widget.getText();
         String textToTranslate = getEnglishColValFromWidget(widget);
         String translatedText;
@@ -238,10 +267,10 @@ public class WidgetCapture {
             // textToTranslate = "Name: <playerName>" -> translatedText = "名前: <playerName>" -> translatedText = "名前: Durial321"
             String translationWithPlaceHolder = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
             translatedText = ids.getPartialTranslationManager().translateWidget(widget, translationWithPlaceHolder, originalText, sqlQuery.getColor());
-        } else if (!ids.getWidgetId2SplitTextAtBr().contains(widgetId)// for most cases
+        } else if (!isTooltipWidget // for most cases
             && !ids.getWidgetId2KeepBr().contains(widgetId)) {
             translatedText = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
-        } else if (ids.getWidgetId2SplitTextAtBr().contains(widgetId)){// for widgets that have <br> in the text and should be kept where they are, translate each line separately
+        } else if (isTooltipWidget){// for widgets that have <br> in the text and should be kept where they are, translate each line separately
             String[] textList = textToTranslate.split("<br>");
             String[] originalTextList = originalText.split("<br>");
             StringBuilder translatedTextBuilder = new StringBuilder();
@@ -279,7 +308,7 @@ public class WidgetCapture {
 
         pastTranslationResults.add(translatedText);
 
-        if (ids.getWidgetId2SplitTextAtBr().contains(widgetId)
+        if (isTooltipWidget
                 || ids.getWidgetId2KeepBr().contains(widgetId)
                 || ids.getWidgetId2FixedSize().containsKey(widgetId)) {
             widgetsUtilRLingual.setWidgetText_BrAsIs(widget, translatedText);
@@ -363,7 +392,9 @@ public class WidgetCapture {
         text = SqlQuery.replaceSpecialSpaces(text);
         text = Colors.getEnumeratedColorWord(text);
         text = SqlQuery.replaceNumbersWithPlaceholders(text);
-        if (!ids.getWidgetId2SplitTextAtBr().contains(widget.getId())
+        boolean isSplitAtBrWidget = ids.getWidgetId2SplitTextAtBr().contains(widget.getId())
+                || isChildWidgetOf(widget, ids.getWidgetId2SplitTextAtBr());
+        if (!isSplitAtBrWidget
                 && !ids.getWidgetId2KeepBr().contains(widget.getId())) {
             text = text.replace(" <br>", " ");
             text = text.replace("<br> ", " ");

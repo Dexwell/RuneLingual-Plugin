@@ -26,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.events.*;
 import net.runelite.api.widgets.InterfaceID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -83,6 +84,7 @@ public class RuneLingualPlugin extends Plugin {
     @Getter
     private RuneLingualConfig config;
     @Inject
+    @Getter
     private CharImageInit charImageInit;
 
     @Getter @Setter
@@ -251,19 +253,46 @@ public class RuneLingualPlugin extends Plugin {
                 String option = top.getOption();
                 if (option != null && !option.isEmpty()
                         && !option.equals("Walk here") && !option.equals("Cancel") && !option.equals("Continue")) {
-                    String[] translated = menuCapture.translateMenuAction(top);
-                    if (translated != null) {
-                        if (targetLanguage.needsSwapMenuOptionAndTarget()) {
-                            top.setOption(translated[0] != null && !translated[0].isEmpty() ? translated[0] : translated[1]);
-                            top.setTarget(translated[0] != null && !translated[0].isEmpty() ? translated[1] : "");
-                        } else {
-                            top.setOption(translated[1]);
-                            top.setTarget(translated[0] != null ? translated[0] : "");
+
+                    // Skill tab hover: use plain12 + noshadow (light background tooltip)
+                    boolean isSkillTabHover = isHoverInSkillsTab(top);
+                    if (isSkillTabHover) {
+                        if (charImageInit.isMultiFontMode() && charImageInit.hasFontAvailable("plain12")) {
+                            generalFunctions.setCurrentFont("plain12");
+                        }
+                        generalFunctions.setCurrentUseShadow(false);
+                    }
+                    try {
+                        String[] translated = menuCapture.translateMenuAction(top);
+                        if (translated != null) {
+                            if (targetLanguage.needsSwapMenuOptionAndTarget()) {
+                                top.setOption(translated[0] != null && !translated[0].isEmpty() ? translated[0] : translated[1]);
+                                top.setTarget(translated[0] != null && !translated[0].isEmpty() ? translated[1] : "");
+                            } else {
+                                top.setOption(translated[1]);
+                                top.setTarget(translated[0] != null ? translated[0] : "");
+                            }
+                        }
+                    } finally {
+                        if (isSkillTabHover) {
+                            generalFunctions.setCurrentFont(null);
+                            generalFunctions.setCurrentUseShadow(true);
                         }
                     }
                 }
             }
         }
+    }
+
+    /** Check if a menu entry's widget belongs to the skills tab interface. */
+    private boolean isHoverInSkillsTab(MenuEntry menuEntry) {
+        Widget menuWidget = menuEntry.getWidget();
+        if (menuWidget != null) {
+            int groupId = WidgetUtil.componentToInterface(menuWidget.getId());
+            int skillsGroupId = WidgetUtil.componentToInterface(ids.getWidgetIdSkillsTab());
+            return groupId == skillsGroupId;
+        }
+        return false;
     }
 
     @Subscribe
