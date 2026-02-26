@@ -56,10 +56,9 @@ public class WidgetCapture {
          && plugin.getConfig().getNpcDialogueConfig() == RuneLingualConfig.ingameTranslationConfig.DONT_TRANSLATE) {
             return;
         }
-        // Use plain12 font for widget/interface text (dialogue handler overrides with its own font)
-        if (charImageInit.isMultiFontMode() && charImageInit.hasFontAvailable("plain12")) {
-            generalFunctions.setCurrentFont("plain12");
-        }
+        // Default font context is null (uses unprefixed keys → default font, typically bold12).
+        // Tooltip widgets override to plain12 in translateWidgetText().
+        // Dialogue widgets override to quill8 in DialogTranslator.
         try {
             Widget[] roots = client.getWidgetRoots();
             SqlQuery sqlQuery = new SqlQuery(this.plugin);
@@ -247,76 +246,87 @@ public class WidgetCapture {
         boolean isTooltipWidget = ids.getWidgetId2SplitTextAtBr().contains(widgetId)
                 || isChildWidgetOf(widget, ids.getWidgetId2SplitTextAtBr());
         if (isTooltipWidget) {
+            // Tooltip on light background: use plain12 (thin) font + no shadow
             generalFunctions.setCurrentUseShadow(false);
+            if (charImageInit.isMultiFontMode() && charImageInit.hasFontAvailable("plain12")) {
+                generalFunctions.setCurrentFont("plain12");
+            }
         } else {
             // Set shadow flag per-widget so StringToTags uses noshadow sprites
             // for unshadowed widgets
             generalFunctions.setCurrentUseShadow(widget.getTextShadowed());
         }
-        String originalText = widget.getText();
-        String textToTranslate = getEnglishColValFromWidget(widget);
-        String translatedText;
-        if (ids.getWidgetIdAnyTranslated().contains(widgetId)) {
-            sqlQuery.setCategory(null);
-            sqlQuery.setSubCategory(null);
-            sqlQuery.setSource(null);
-            translatedText = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
-        } else if (widgetsUtilRLingual.shouldPartiallyTranslateWidget(widget)) {
-            // for widgets like "Name: <playerName>" (found in accounts management tab), where only the part of the text should be translated
-            // order:
-            // textToTranslate = "Name: <playerName>" -> translatedText = "名前: <playerName>" -> translatedText = "名前: Durial321"
-            String translationWithPlaceHolder = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
-            translatedText = ids.getPartialTranslationManager().translateWidget(widget, translationWithPlaceHolder, originalText, sqlQuery.getColor());
-        } else if (!isTooltipWidget // for most cases
-            && !ids.getWidgetId2KeepBr().contains(widgetId)) {
-            translatedText = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
-        } else if (isTooltipWidget){// for widgets that have <br> in the text and should be kept where they are, translate each line separately
-            String[] textList = textToTranslate.split("<br>");
-            String[] originalTextList = originalText.split("<br>");
-            StringBuilder translatedTextBuilder = new StringBuilder();
+        try {
+            String originalText = widget.getText();
+            String textToTranslate = getEnglishColValFromWidget(widget);
+            String translatedText;
+            if (ids.getWidgetIdAnyTranslated().contains(widgetId)) {
+                sqlQuery.setCategory(null);
+                sqlQuery.setSubCategory(null);
+                sqlQuery.setSource(null);
+                translatedText = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
+            } else if (widgetsUtilRLingual.shouldPartiallyTranslateWidget(widget)) {
+                // for widgets like "Name: <playerName>" (found in accounts management tab), where only the part of the text should be translated
+                // order:
+                // textToTranslate = "Name: <playerName>" -> translatedText = "名前: <playerName>" -> translatedText = "名前: Durial321"
+                String translationWithPlaceHolder = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
+                translatedText = ids.getPartialTranslationManager().translateWidget(widget, translationWithPlaceHolder, originalText, sqlQuery.getColor());
+            } else if (!isTooltipWidget // for most cases
+                && !ids.getWidgetId2KeepBr().contains(widgetId)) {
+                translatedText = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
+            } else if (isTooltipWidget){// for widgets that have <br> in the text and should be kept where they are, translate each line separately
+                String[] textList = textToTranslate.split("<br>");
+                String[] originalTextList = originalText.split("<br>");
+                StringBuilder translatedTextBuilder = new StringBuilder();
 
-            for (int i = 0; i < textList.length; i++) {
-                String text = textList[i];
-                String originalTextLine = originalTextList[i];
-                String translatedTextPart = getTranslationFromQuery(sqlQuery, originalTextLine, text);
-                if (translatedTextPart == null) { // if translation failed
-                    return;
+                for (int i = 0; i < textList.length; i++) {
+                    String text = textList[i];
+                    String originalTextLine = originalTextList[i];
+                    String translatedTextPart = getTranslationFromQuery(sqlQuery, originalTextLine, text);
+                    if (translatedTextPart == null) { // if translation failed
+                        return;
+                    }
+                    translatedTextBuilder.append(translatedTextPart);
+                    if (i != textList.length - 1) { // if it's not the last line, add <br>
+                        translatedTextBuilder.append("<br>");
+                    }
                 }
-                translatedTextBuilder.append(translatedTextPart);
-                if (i != textList.length - 1) { // if it's not the last line, add <br>
-                    translatedTextBuilder.append("<br>");
-                }
+
+                translatedText = translatedTextBuilder.toString();
+            } else { // if(ids.getWidgetId2KeepBr().contains(widgetId))
+                // for widgets that have <br> in the text and should be kept where they are, translate the whole text
+                translatedText = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
             }
 
-            translatedText = translatedTextBuilder.toString();
-        } else { // if(ids.getWidgetId2KeepBr().contains(widgetId))
-            // for widgets that have <br> in the text and should be kept where they are, translate the whole text
-            translatedText = getTranslationFromQuery(sqlQuery, originalText, textToTranslate);
-        }
+            // translation was not available
 
-        // translation was not available
+            if(translatedText == null){ // if the translation is the same as the original with <br>
+                return;
+            }
+            String originalWithoutBr = removeBrAndTags(originalText);
+            String translationWithoutBr = removeBrAndTags(translatedText);
+            if(Objects.equals(translatedText, originalText) // if the translation is the same as the original
+                    || originalWithoutBr.equals(translationWithoutBr)){ // if the translation is the same as the original without <br>
+                return;
+            }
 
-        if(translatedText == null){ // if the translation is the same as the original with <br>
-            return;
-        }
-        String originalWithoutBr = removeBrAndTags(originalText);
-        String translationWithoutBr = removeBrAndTags(translatedText);
-        if(Objects.equals(translatedText, originalText) // if the translation is the same as the original
-                || originalWithoutBr.equals(translationWithoutBr)){ // if the translation is the same as the original without <br>
-            return;
-        }
+            pastTranslationResults.add(translatedText);
 
-        pastTranslationResults.add(translatedText);
-
-        if (isTooltipWidget
-                || ids.getWidgetId2KeepBr().contains(widgetId)
-                || ids.getWidgetId2FixedSize().containsKey(widgetId)) {
-            widgetsUtilRLingual.setWidgetText_BrAsIs(widget, translatedText);
-        } else {
-            widgetsUtilRLingual.setWidgetText_NiceBr(widget, translatedText);
+            if (isTooltipWidget
+                    || ids.getWidgetId2KeepBr().contains(widgetId)
+                    || ids.getWidgetId2FixedSize().containsKey(widgetId)) {
+                widgetsUtilRLingual.setWidgetText_BrAsIs(widget, translatedText);
+            } else {
+                widgetsUtilRLingual.setWidgetText_NiceBr(widget, translatedText);
+            }
+            widgetsUtilRLingual.changeLineHeight(widget);
+            widgetsUtilRLingual.changeWidgetSize_ifNeeded(widget);
+        } finally {
+            // Restore default font context if we switched to plain12 for tooltip
+            if (isTooltipWidget) {
+                generalFunctions.setCurrentFont(null);
+            }
         }
-        widgetsUtilRLingual.changeLineHeight(widget);
-        widgetsUtilRLingual.changeWidgetSize_ifNeeded(widget);
     }
 
     private String getTranslationFromQuery(SqlQuery sqlQuery, String originalText, String textToTranslate) {
