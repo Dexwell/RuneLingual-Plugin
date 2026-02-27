@@ -357,7 +357,7 @@ public class RuneLingualPlugin extends Plugin {
 
             clientToolBar.removeNavigation(navButton);
             queueUpdateAllOverrides();
-            if (targetLanguage.needsCharImages() && !pastLanguages.contains(targetLanguage)) {
+            if (targetLanguage.needsCharImages() && !charImagesAlreadyLoaded(targetLanguage)) {
                 charImageInit.loadCharImages();
             }
 
@@ -498,6 +498,21 @@ public class RuneLingualPlugin extends Plugin {
     @Provides
     RuneLingualConfig provideConfig(ConfigManager configManager) {
         return configManager.getConfig(RuneLingualConfig.class);
+    }
+
+    /**
+     * Check if char images are already loaded for this language.
+     * Languages that share the same char image base (e.g., ja and ja_nk)
+     * are considered already loaded if any of them has been loaded before.
+     */
+    private boolean charImagesAlreadyLoaded(LangCodeSelectableList lang) {
+        String charBase = lang.getCharImageLangCode();
+        for (LangCodeSelectableList past : pastLanguages) {
+            if (past.needsCharImages() && past.getCharImageLangCode().equals(charBase)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void initLangFiles() {
