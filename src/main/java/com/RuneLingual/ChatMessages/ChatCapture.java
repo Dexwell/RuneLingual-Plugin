@@ -5,6 +5,8 @@ import com.RuneLingual.SQL.SqlQuery;
 import com.RuneLingual.SidePanelComponents.ChatBoxSection;
 import com.RuneLingual.commonFunctions.Transformer;
 import com.RuneLingual.debug.OutputToFile;
+import com.RuneLingual.nonLatin.CharImageInit;
+import com.RuneLingual.nonLatin.GeneralFunctions;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
@@ -38,6 +40,10 @@ public class ChatCapture
     private PlayerMessage playerMessage;
     @Inject
     private ChatColorManager chatColorManager;
+    @Inject
+    private CharImageInit charImageInit;
+    @Inject
+    private GeneralFunctions generalFunctions;
     @Getter
     private Set<Pair<ChatMessage, Long>> pendingChatMessages = new HashSet<>(); // the untranslated message (by api) and time to expire
 
@@ -86,6 +92,20 @@ public class ChatCapture
 
 
     public void handleChatMessage(ChatMessage chatMessage) throws Exception {
+        // Use plain12 without shadow for chat messages (body text)
+        if (charImageInit.isMultiFontMode() && charImageInit.hasFontAvailable("plain12")) {
+            generalFunctions.setCurrentFont("plain12");
+        }
+        generalFunctions.setCurrentUseShadow(false);
+        try {
+            handleChatMessageInner(chatMessage);
+        } finally {
+            generalFunctions.setCurrentFont(null);
+            generalFunctions.setCurrentUseShadow(true);
+        }
+    }
+
+    private void handleChatMessageInner(ChatMessage chatMessage) throws Exception {
         ChatMessageType type = chatMessage.getType();
         MessageNode messageNode = chatMessage.getMessageNode();
         String message = chatMessage.getMessage();// e.g.<col=6800bf>Some cracks around the cave begin to ooze water.

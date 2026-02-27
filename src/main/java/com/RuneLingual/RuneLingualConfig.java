@@ -72,7 +72,7 @@ public interface RuneLingualConfig extends Config {
     String SECTION_DEBUGGING = "debugging";
 
     @ConfigItem(
-            name = "\uD83D\uDDE3\uD83D\uDCAC\uD83C\uDF10",
+            name = "Target",
             description = "Select the language to be translated to",
             keyName = "targetLang",
             position = offset_section1,
@@ -234,6 +234,17 @@ public interface RuneLingualConfig extends Config {
             section = SECTION_GAME_SYSTEM_TEXT
     )
     default boolean getMouseHoverConfig() {
+        return true;
+    }
+
+    @ConfigItem(
+            name = "Enable English Hover Text",
+            description = "Show the original English hover text alongside translated hover text",
+            position = 10 + offset_section2,
+            keyName = "enableEnglishHover",
+            section = SECTION_GAME_SYSTEM_TEXT
+    )
+    default boolean getEnableEnglishHoverConfig() {
         return true;
     }
 

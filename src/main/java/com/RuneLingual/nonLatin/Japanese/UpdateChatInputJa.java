@@ -102,6 +102,10 @@ public class UpdateChatInputJa {
 
     public String romJpTransform(String romMsg, boolean chatInput) {
         String hiraMsg = this.rom2Hira.romToKat(romMsg);
+        // For Japanese (No Kanji), skip kanji conversion and return hiragana/katakana only
+        if (!plugin.getConfig().getSelectedLanguage().needsInputCandidateOverlay()) {
+            return hiraMsg;
+        }
         return hira2Jp(hiraMsg, chatInput);
     }
 

@@ -9,32 +9,34 @@ import javax.inject.Inject;
 @Getter
 public enum LangCodeSelectableList
 {
-    ENGLISH ("en", "EN","EN", 8, 14, 6, 6, false, false, false, false, true, false, false),
-    PORTUGUÊS_BRASILEIRO ("pt_br", "PT","PT-BR", 8, 11, 6, 6, false, false, false, false, true, false, true),
-    NORSK("no", "NB", "NB", 8, 14, 6, 6, false, false, false, false, true, false, true),
-    日本語("ja", "JA", "JA", 12, 12, 12, 15, true, false, true, true, false, true, true),
-    Русский("ru", "RU", "RU", 8, 12, 6, 6, true, false, true, false, true, false, true),
-    český("cs", "CS", "CS", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    dansk("da", "DA", "DA", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    DEUTSCH("de", "DE", "DE", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    ESPAÑOL("es", "ES", "ES", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    eesti("et", "ET", "ET", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    suomi("fi", "FI", "FI", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    FRANÇAIS("fr", "FR", "FR", 7, 14, 6, 6, false, false, false, false, true, true, false),
-    //hrvatski("hr", "HE", "HE", 8, 14, 6, 6, false, true, false, false, true, false, false), // only available in pro v2 api, todo: change code to check for this, then add this language
-    magyar("hu", "HU", "HU", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    Indonesian("id", "ID", "ID", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    italiano("it", "IT", "IT", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    Nederlands("nl", "NL", "NL", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    PORTUGUÊS("pt", "PT-PT", "PT-PT", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    svenska("sv", "SV", "SV", 7, 14, 6, 6, false, false, false, false, true, false, false),
-    Türkçe("tr", "TR", "TR", 7, 14, 6, 6, false, false, false, false, true, false, true),
-    Polski("pl", "PL", "PL", 7, 14, 6, 6, false, false, false, false, true, false, false);
+    ENGLISH ("English", "en", "EN","EN", 8, 14, 6, 6, false, false, false, false, true, false, false),
+    PORTUGUÊS_BRASILEIRO ("Brazilian Portuguese", "pt_br", "PT","PT-BR", 8, 11, 6, 6, false, false, false, false, true, false, true),
+    NORSK("Norwegian", "no", "NB", "NB", 8, 14, 6, 6, false, false, false, false, true, false, true),
+    日本語("Japanese", "ja", "JA", "JA", 12, 12, 12, 15, true, false, true, true, false, true, true),
+    日本語_漢字なし("Japanese (No Kanji)", "ja_nk", "JA", "JA", 12, 12, 12, 15, true, false, true, false, false, true, true),
+    Русский("Russian", "ru", "RU", "RU", 8, 12, 6, 6, true, false, true, false, true, false, true),
+    český("Czech", "cs", "CS", "CS", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    dansk("Danish", "da", "DA", "DA", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    DEUTSCH("German", "de", "DE", "DE", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    ESPAÑOL("Spanish", "es", "ES", "ES", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    eesti("Estonian", "et", "ET", "ET", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    suomi("Finnish", "fi", "FI", "FI", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    FRANÇAIS("French", "fr", "FR", "FR", 7, 14, 6, 6, false, false, false, false, true, true, false),
+    //hrvatski("Croatian", "hr", "HE", "HE", 8, 14, 6, 6, false, true, false, false, true, false, false), // only available in pro v2 api, todo: change code to check for this, then add this language
+    magyar("Hungarian", "hu", "HU", "HU", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    Indonesian("Indonesian", "id", "ID", "ID", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    italiano("Italian", "it", "IT", "IT", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    Nederlands("Dutch", "nl", "NL", "NL", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    PORTUGUÊS("Portuguese", "pt", "PT-PT", "PT-PT", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    svenska("Swedish", "sv", "SV", "SV", 7, 14, 6, 6, false, false, false, false, true, false, false),
+    Türkçe("Turkish", "tr", "TR", "TR", 7, 14, 6, 6, false, false, false, false, true, false, true),
+    Polski("Polish", "pl", "PL", "PL", 7, 14, 6, 6, false, false, false, false, true, false, false);
 
 
     // todo: add languages here
     // needs char images: arabic, bulgarian, czech, greek, hebrew(pro only), lithuanian, latvian, polish, romanian, slovak, slovenian, Thai (pro version only), Ukrainian, Vietnamese (pro version only), Chinese (simplified & traditional)
 
+    private final String displayName;
     private final String langCode;
     private final String deeplLangCodeSource;
     private final String deeplLangCodeTarget;
@@ -59,11 +61,12 @@ public enum LangCodeSelectableList
 
 
     @Inject
-    LangCodeSelectableList(String langCode, String deeplCodeSrc, String deeplCodeTgt,
+    LangCodeSelectableList(String displayName, String langCode, String deeplCodeSrc, String deeplCodeTgt,
                            int charWidth, int charHeight, int chatBoxCharWidth, int overlayCharWidth,
                            boolean needCharImages, boolean swapMenuOptionAndTarget,
                            boolean needInputOverlay, boolean needInputCandidateOverlay,
                            boolean needSpaceBetweenWords, boolean chatButtonHorizontal, boolean localTranscript) {
+        this.displayName = displayName;
         this.langCode = langCode;
         this.deeplLangCodeSource = deeplCodeSrc;
         this.deeplLangCodeTarget = deeplCodeTgt;
@@ -78,6 +81,11 @@ public enum LangCodeSelectableList
         this.needSpaceBetweenWords = needSpaceBetweenWords;
         this.chatButtonHorizontal = chatButtonHorizontal;
         this.localTranscript = localTranscript;
+    }
+
+    @Override
+    public String toString() {
+        return displayName;
     }
 
     public boolean needsCharImages() {
@@ -102,6 +110,11 @@ public enum LangCodeSelectableList
 
     public boolean hasLocalTranscript() {return localTranscript;}
 
+    /** Check if this language is a Japanese variant (ja, ja_nk, etc.). */
+    public boolean isJapanese() {
+        return langCode.startsWith("ja");
+    }
+
     public static int getLatinCharWidth(Widget widget, LangCodeSelectableList langCode) {
         /*
         494: 5 px
@@ -120,8 +133,10 @@ public enum LangCodeSelectableList
     }
 
     public static String getAPIErrorMessage(LangCodeSelectableList langCode) {
-        if (langCode == LangCodeSelectableList.日本語) {
+        if (langCode == 日本語) {
             return "APIキーが無効、翻訳の上限が近い、\nもしくはリクエストが集中しています。";
+        } else if (langCode == 日本語_漢字なし) {
+            return "APIキーがむこう、ほんやくのじょうげんがちかい、\nもしくはリクエストがしゅうちゅうしています。";
         } else {
             return "The API key is invalid, the translation \nlimit is close, or requests are congested.";
         }

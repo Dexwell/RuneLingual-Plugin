@@ -4,11 +4,13 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FilenameFilter;
-import java.util.HashMap;
+import java.util.*;
+import java.util.List;
 
 import com.RuneLingual.prepareResources.Downloader;
 import com.RuneLingual.RuneLingualPlugin;
 
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.game.ChatIconManager;
 
@@ -16,19 +18,56 @@ import javax.imageio.ImageIO;
 import javax.inject.Inject;
 
 @Slf4j
+@javax.inject.Singleton
 public class CharImageInit {
     @Inject
     RuneLingualPlugin runeLingualPlugin;
 
-    /*
-    * Load character images from the local folder, and register them to the chatIconManager.
-    * Also registers shadow variants (with a 1px drop shadow) for use in menus.
-    * The images are downloaded from the RuneLingual transcript website, which is done in the Downloader class.
+    /**
+     * Known OSRS font directory names.
+     * If any of these exist as subdirectories under char_{langCode}/,
+     * we switch to multi-font mode and load white sprites per font.
      */
-    public void loadCharImages()
-    {
-        //if the target language doesn't need character images, return
-        if(!runeLingualPlugin.getTargetLanguage().needsCharImages()){
+    private static final Set<String> KNOWN_FONT_NAMES = new LinkedHashSet<>(Arrays.asList(
+            "plain11", "plain12", "bold12", "quill", "quill8"
+    ));
+
+    /** UI fonts get drop shadows; dialogue fonts do not. */
+    private static final Set<String> UI_FONTS = new LinkedHashSet<>(Arrays.asList(
+            "plain11", "plain12", "bold12"
+    ));
+
+    /**
+     * Tint colors — white source sprites are tinted to each of these at load time.
+     * Format: { colorName, R, G, B }.
+     * "black" uses (1,1,1) because OSRS treats pure (0,0,0) as transparent.
+     */
+    private static final String[][] TINT_COLORS = {
+            {"black",     "1",   "1",   "1"  },
+            {"blue",      "0",   "0",   "255"},
+            {"green",     "0",   "255", "0"  },
+            {"lightblue", "0",   "255", "255"},
+            {"orange",    "255", "112", "0"  },
+            {"red",       "255", "0",   "0"  },
+            {"white",     "255", "255", "255"},
+            {"yellow",    "255", "255", "0"  },
+    };
+
+    /** Fonts that were detected and loaded. */
+    @Getter
+    private final Set<String> availableFonts = new LinkedHashSet<>();
+
+    /** The default font name (used for unprefixed lookups), or null if legacy mode. */
+    @Getter
+    private String defaultFont = null;
+
+    /*
+     * Load character images from the local folder, and register them to the chatIconManager.
+     * Detects whether multi-font directories exist; if so, loads white sprites per font
+     * and tints them to all colors at runtime. Otherwise falls back to legacy pre-colored PNGs.
+     */
+    public void loadCharImages() {
+        if (!runeLingualPlugin.getTargetLanguage().needsCharImages()) {
             return;
         }
 
@@ -39,60 +78,239 @@ public class CharImageInit {
         String langCode = downloader.getLangCode();
         final String pathToChar = downloader.getLocalLangFolder().toString() + File.separator + "char_" + langCode;
 
-        String[] charNameArray = getCharList(pathToChar); //list of all characters e.g.　black--3021.png
+        // Check for font subdirectories
+        String[] fontDirs = detectFontDirectories(pathToChar);
 
-        for (String imageName : charNameArray) {//register all character images to chatIconManager
+        if (fontDirs.length > 0) {
+            // Multi-font mode: load white sprites per font, tint to all colors
+            defaultFont = determineDefaultFont(fontDirs);
+            for (String fontDir : fontDirs) {
+                availableFonts.add(fontDir);
+            }
+            loadMultiFontCharImages(pathToChar, fontDirs, chatIconManager, charIds);
+            log.info("Multi-font mode: loaded fonts {} (default: {})", availableFonts, defaultFont);
+        } else {
+            // Legacy mode: load pre-colored PNGs from flat directory
+            loadLegacyCharImages(pathToChar, chatIconManager, charIds);
+            log.info("Legacy mode: loaded pre-colored sprites from {}", pathToChar);
+        }
+    }
+
+    /**
+     * Check which known font subdirectories exist under pathToChar.
+     */
+    private String[] detectFontDirectories(String pathToChar) {
+        List<String> found = new ArrayList<>();
+        for (String fontName : KNOWN_FONT_NAMES) {
+            File dir = new File(pathToChar + File.separator + fontName);
+            if (dir.isDirectory()) {
+                found.add(fontName);
+            }
+        }
+        return found.toArray(new String[0]);
+    }
+
+    /**
+     * Determine the default font from available font directories.
+     * Preference: bold12 > plain12 > plain11 > first available.
+     * bold12 is preferred because OSRS uses it for menus, hover text,
+     * and most UI elements. plain12 is for longer body text (widgets, chat).
+     */
+    private String determineDefaultFont(String[] fontDirs) {
+        Set<String> available = new LinkedHashSet<>(Arrays.asList(fontDirs));
+        if (available.contains("bold12")) return "bold12";
+        if (available.contains("plain12")) return "plain12";
+        if (available.contains("plain11")) return "plain11";
+        return fontDirs[0]; // fallback to first found
+    }
+
+    /**
+     * Multi-font mode: for each font directory, load white PNGs, tint to each color,
+     * and register with/without shadow based on font type.
+     *
+     * Registration keys:
+     *   - UI fonts (shadow):    "fontName:color--codepoint.png" → shadow sprite hash
+     *   - UI fonts (noshadow):  "noshadow_fontName:color--codepoint.png" → plain sprite hash
+     *   - Default font also gets unprefixed keys: "color--codepoint.png" and "noshadow_color--codepoint.png"
+     *   - plain12 also serves plain11 if plain11 not available (registered under "plain11:..." keys)
+     *   - Dialogue fonts: "fontName:color--codepoint.png" → plain sprite hash (no shadow, no noshadow variant)
+     */
+    private void loadMultiFontCharImages(String pathToChar, String[] fontDirs,
+                                         ChatIconManager chatIconManager,
+                                         HashMap<String, Integer> charIds) {
+        boolean plain11Available = availableFonts.contains("plain11");
+
+        for (String fontName : fontDirs) {
+            String fontPath = pathToChar + File.separator + fontName;
+            String[] whiteFiles = getCharList(fontPath);
+            boolean isUiFont = UI_FONTS.contains(fontName);
+            boolean isDefault = fontName.equals(defaultFont);
+
+            for (String whiteFileName : whiteFiles) {
+                try {
+                    File file = new File(fontPath + File.separator + whiteFileName);
+                    BufferedImage whiteSprite = ImageIO.read(file);
+
+                    // Extract codepoint from filename: "3021.png" → "3021"
+                    String codepointStr = whiteFileName.substring(0, whiteFileName.length() - 4);
+
+                    for (String[] colorDef : TINT_COLORS) {
+                        String colorName = colorDef[0];
+                        int targetR = Integer.parseInt(colorDef[1]);
+                        int targetG = Integer.parseInt(colorDef[2]);
+                        int targetB = Integer.parseInt(colorDef[3]);
+
+                        BufferedImage tinted = tintSprite(whiteSprite, targetR, targetG, targetB);
+                        String imgName = colorName + "--" + codepointStr + ".png";
+
+                        if (isUiFont) {
+                            // UI font: register shadow version and noshadow version
+                            BufferedImage shadowed = addDropShadow(tinted);
+
+                            // Font-prefixed keys
+                            String fontKey = fontName + ":" + imgName;
+                            String noshadowFontKey = "noshadow_" + fontName + ":" + imgName;
+                            int shadowHash = chatIconManager.registerChatIcon(shadowed);
+                            int plainHash = chatIconManager.registerChatIcon(tinted);
+                            charIds.put(fontKey, shadowHash);
+                            charIds.put(noshadowFontKey, plainHash);
+
+                            // Default font also gets unprefixed keys
+                            if (isDefault) {
+                                charIds.put(imgName, shadowHash);
+                                charIds.put("noshadow_" + imgName, plainHash);
+                            }
+
+                            // plain12 also serves plain11 if plain11 is not available
+                            if (fontName.equals("plain12") && !plain11Available) {
+                                charIds.put("plain11:" + imgName, shadowHash);
+                                charIds.put("noshadow_plain11:" + imgName, plainHash);
+                            }
+                        } else {
+                            // Dialogue font: register without shadow, no noshadow variant needed
+                            String fontKey = fontName + ":" + imgName;
+                            int plainHash = chatIconManager.registerChatIcon(tinted);
+                            charIds.put(fontKey, plainHash);
+
+                            // If this dialogue font is also somehow the default, register unprefixed
+                            if (isDefault) {
+                                charIds.put(imgName, plainHash);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("Error loading multi-font sprite: {}/{}", fontName, whiteFileName, e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Legacy mode: load pre-colored PNGs directly (e.g. "yellow--3021.png").
+     * Registers shadow version under the original name and noshadow version under "noshadow_" prefix.
+     */
+    private void loadLegacyCharImages(String pathToChar,
+                                      ChatIconManager chatIconManager,
+                                      HashMap<String, Integer> charIds) {
+        String[] charNameArray = getCharList(pathToChar);
+
+        for (String imageName : charNameArray) {
             try {
                 String fullPath = pathToChar + File.separator + imageName;
                 File externalCharImg = new File(fullPath);
                 final BufferedImage image = ImageIO.read(externalCharImg);
 
-                // Register shadow version as default — most OSRS UI text has drop shadows
-                final BufferedImage shadowed = addDropShadow(image);
-                final int shadowCharID = chatIconManager.registerChatIcon(shadowed);
-                charIds.put(imageName, shadowCharID);
+                // Shadow version (default for UI/menus)
+                BufferedImage shadowed = addDropShadow(image);
+                final int shadowHash = chatIconManager.registerChatIcon(shadowed);
+                charIds.put(imageName, shadowHash);
 
-                // Register original (no shadow) for dialogue, which uses a different font style
-                final int charID = chatIconManager.registerChatIcon(image);
-                charIds.put("noshadow_" + imageName, charID);
-            } catch (Exception e){log.error("error:",e);}
+                // Noshadow version (for dialogue)
+                final int plainHash = chatIconManager.registerChatIcon(image);
+                charIds.put("noshadow_" + imageName, plainHash);
+            } catch (Exception e) {
+                log.error("error:", e);
+            }
         }
-        //log.info("end of making character image hashmap");
     }
 
+    /**
+     * Tint a sprite to a target color by replacing all visible pixels' RGB channels.
+     * Any non-transparent pixel becomes the target color. Alpha channel is preserved.
+     * RGB values are clamped to minimum 1 to avoid OSRS treating (0,0,0) as transparent.
+     */
+    private BufferedImage tintSprite(BufferedImage src, int targetR, int targetG, int targetB) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        BufferedImage result = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+
+        int clampedR = Math.max(targetR, 1);
+        int clampedG = Math.max(targetG, 1);
+        int clampedB = Math.max(targetB, 1);
+        int targetArgbNoAlpha = (clampedR << 16) | (clampedG << 8) | clampedB;
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = src.getRGB(x, y);
+                int a = (argb >> 24) & 0xFF;
+                if (a == 0) {
+                    result.setRGB(x, y, 0); // fully transparent
+                } else {
+                    result.setRGB(x, y, (a << 24) | targetArgbNoAlpha);
+                }
+            }
+        }
+        return result;
+    }
 
     /**
-     * Adds a 1px drop shadow at offset (1,1) to match OSRS native text rendering.
-     * The returned image is 1px wider and 1px taller to accommodate the shadow.
+     * Add a 1px drop shadow at offset (+1, +1) using near-black (1,1,1).
+     * The shadow is drawn behind the original image on a larger canvas.
      */
     private BufferedImage addDropShadow(BufferedImage src) {
         int w = src.getWidth();
         int h = src.getHeight();
+        // Canvas is 1px wider and 1px taller to accommodate shadow offset
         BufferedImage result = new BufferedImage(w + 1, h + 1, BufferedImage.TYPE_INT_ARGB);
 
-        // Draw shadow: for each non-transparent pixel in src, draw a near-black pixel at (x+1, y+1)
+        // Draw shadow first (offset +1, +1)
+        int shadowColor = 0xFF010101; // near-black, not pure black (which OSRS treats as transparent)
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int argb = src.getRGB(x, y);
-                int alpha = (argb >> 24) & 0xFF;
-                if (alpha > 0) {
-                    // Use near-black (1,1,1) instead of pure black (0,0,0)
-                    // because OSRS treats pure black as transparent in sprites
-                    result.setRGB(x + 1, y + 1, 0xFF010101);
+                int a = (argb >> 24) & 0xFF;
+                if (a > 0) {
+                    result.setRGB(x + 1, y + 1, shadowColor);
                 }
             }
         }
 
-        // Draw original character on top at (0,0)
-        Graphics2D g = result.createGraphics();
-        g.setComposite(AlphaComposite.SrcOver);
-        g.drawImage(src, 0, 0, null);
-        g.dispose();
+        // Draw original image on top (offset 0, 0)
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = src.getRGB(x, y);
+                int a = (argb >> 24) & 0xFF;
+                if (a > 0) {
+                    result.setRGB(x, y, argb);
+                }
+            }
+        }
 
         return result;
     }
 
-    public String[] getCharList(String pathToChar) {//get list of names of all characters of every colours)
+    /** Check if a specific font is available (was detected and loaded). */
+    public boolean hasFontAvailable(String fontName) {
+        return availableFonts.contains(fontName);
+    }
+
+    /** Whether multi-font mode is active (at least one font directory was found). */
+    public boolean isMultiFontMode() {
+        return defaultFont != null;
+    }
+
+    /** Get list of PNG filenames in a directory. */
+    public String[] getCharList(String pathToChar) {
         FilenameFilter pngFilter = new FilenameFilter() {
             @Override
             public boolean accept(File dir, String name) {
@@ -100,9 +318,9 @@ public class CharImageInit {
             }
         };
         File colorDir = new File(pathToChar + "/");
-        File[] files = colorDir.listFiles(pngFilter); //list of files that end with ".png"
+        File[] files = colorDir.listFiles(pngFilter);
 
-        if (files == null){return new String[]{};}
+        if (files == null) { return new String[]{}; }
 
         String[] charImageNames = new String[files.length];
         for (int j = 0; j < files.length; j++) {

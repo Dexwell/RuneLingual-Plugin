@@ -4,6 +4,9 @@ import com.RuneLingual.LangCodeSelectableList;
 import com.RuneLingual.RuneLingualConfig;
 import com.RuneLingual.RuneLingualPlugin;
 import com.RuneLingual.MenuCapture;
+import com.RuneLingual.commonFunctions.Ids;
+import com.RuneLingual.nonLatin.CharImageInit;
+import com.RuneLingual.nonLatin.GeneralFunctions;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import java.awt.Dimension;
@@ -15,6 +18,8 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.widgets.InterfaceID;
+import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -159,13 +164,38 @@ public class MouseTooltipOverlay extends Overlay
             return;
         }
 
-        //otherwise translate the target and option
-        String[] newMenus = menuCapture.translateMenuAction(menuEntry);
-        if (newMenus != null)
-        {
-            newTarget = newMenus[0];
-            newOption = newMenus[1];
+        // Skill tab hover: use plain12 + noshadow (light background tooltip)
+        boolean isSkillTabHover = isHoverInSkillsTab(menuEntry);
+        GeneralFunctions generalFunctions = this.plugin.getGeneralFunctions();
+        if (isSkillTabHover) {
+            CharImageInit charImageInit = this.plugin.getCharImageInit();
+            if (charImageInit.isMultiFontMode() && charImageInit.hasFontAvailable("plain12")) {
+                generalFunctions.setCurrentFont("plain12");
+            }
+            generalFunctions.setCurrentUseShadow(false);
         }
+        try {
+            //otherwise translate the target and option
+            String[] newMenus = menuCapture.translateMenuAction(menuEntry);
+            if (newMenus != null)
+            {
+                newTarget = newMenus[0];
+                newOption = newMenus[1];
+            }
+        } finally {
+            if (isSkillTabHover) {
+                generalFunctions.setCurrentFont(null);
+                generalFunctions.setCurrentUseShadow(true);
+            }
+        }
+
+        // When English hover is disabled, the menu entry text is replaced in
+        // onBeforeRender (RuneLingualPlugin), so skip adding a tooltip here.
+        if (!config.getEnableEnglishHoverConfig())
+        {
+            return;
+        }
+
         if (this.plugin.getTargetLanguage().needsSwapMenuOptionAndTarget())
         {
             tooltipManager.addFront(new Tooltip((Strings.isNullOrEmpty(newTarget) ? newOption : newTarget + " " + newOption)));
@@ -211,5 +241,17 @@ public class MouseTooltipOverlay extends Overlay
             return false;
         }
         return true;
+    }
+
+    /** Check if a menu entry's widget belongs to the skills tab interface. */
+    private boolean isHoverInSkillsTab(MenuEntry menuEntry) {
+        Widget menuWidget = menuEntry.getWidget();
+        if (menuWidget != null) {
+            Ids ids = this.plugin.getIds();
+            int groupId = WidgetUtil.componentToInterface(menuWidget.getId());
+            int skillsGroupId = WidgetUtil.componentToInterface(ids.getWidgetIdSkillsTab());
+            return groupId == skillsGroupId;
+        }
+        return false;
     }
 }
