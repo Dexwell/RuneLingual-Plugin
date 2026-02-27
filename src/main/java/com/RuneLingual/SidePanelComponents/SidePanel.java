@@ -64,6 +64,10 @@ public class SidePanel extends PluginPanel{
             titleText = "ルーンリンガル";
             helpText = "設定のヘルプ";
             discordText = "Discordでヘルプを求める";
+        } else if (targetLanguage == LangCodeSelectableList.日本語_漢字なし) {
+            titleText = "ルーンリンガル";
+            helpText = "せっていのヘルプ";
+            discordText = "Discordでヘルプをもとめる";
         }
         // todo: add more languages as needed
     }

@@ -13,6 +13,7 @@ public enum LangCodeSelectableList
     PORTUGUÊS_BRASILEIRO ("Brazilian Portuguese", "pt_br", "PT","PT-BR", 8, 11, 6, 6, false, false, false, false, true, false, true),
     NORSK("Norwegian", "no", "NB", "NB", 8, 14, 6, 6, false, false, false, false, true, false, true),
     日本語("Japanese", "ja", "JA", "JA", 12, 12, 12, 15, true, false, true, true, false, true, true),
+    日本語_漢字なし("Japanese (No Kanji)", "ja_nk", "JA", "JA", 12, 12, 12, 15, true, false, true, false, false, true, true),
     Русский("Russian", "ru", "RU", "RU", 8, 12, 6, 6, true, false, true, false, true, false, true),
     český("Czech", "cs", "CS", "CS", 7, 14, 6, 6, false, false, false, false, true, false, false),
     dansk("Danish", "da", "DA", "DA", 7, 14, 6, 6, false, false, false, false, true, false, false),
@@ -109,6 +110,11 @@ public enum LangCodeSelectableList
 
     public boolean hasLocalTranscript() {return localTranscript;}
 
+    /** Check if this language is a Japanese variant (ja, ja_nk, etc.). */
+    public boolean isJapanese() {
+        return langCode.startsWith("ja");
+    }
+
     public static int getLatinCharWidth(Widget widget, LangCodeSelectableList langCode) {
         /*
         494: 5 px
@@ -127,8 +133,10 @@ public enum LangCodeSelectableList
     }
 
     public static String getAPIErrorMessage(LangCodeSelectableList langCode) {
-        if (langCode == LangCodeSelectableList.日本語) {
+        if (langCode == 日本語) {
             return "APIキーが無効、翻訳の上限が近い、\nもしくはリクエストが集中しています。";
+        } else if (langCode == 日本語_漢字なし) {
+            return "APIキーがむこう、ほんやくのじょうげんがちかい、\nもしくはリクエストがしゅうちゅうしています。";
         } else {
             return "The API key is invalid, the translation \nlimit is close, or requests are congested.";
         }

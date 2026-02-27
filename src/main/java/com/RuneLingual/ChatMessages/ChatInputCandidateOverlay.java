@@ -46,7 +46,7 @@ public class ChatInputCandidateOverlay extends Overlay
 
         String[] nonLatinMsg = {};
         
-        if(plugin.getConfig().getSelectedLanguage().equals(LangCodeSelectableList.日本語)){
+        if(plugin.getConfig().getSelectedLanguage().isJapanese()){
             nonLatinMsg = plugin.getChatInputRLingual().getUpdateChatInputJa().getKanjKatCandidates().toArray(new String[0]);
         }
 
