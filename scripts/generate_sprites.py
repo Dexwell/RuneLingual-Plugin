@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Generate white character sprite PNGs for RuneLingual's multi-font system.
+Generate character sprite PNGs for RuneLingual's multi-font system.
 
-Each sprite is a single Unicode character rendered in white on a transparent
-background. The Java plugin tints these to all needed colors at runtime.
+Each sprite is a single Unicode character rendered in near-black (1,1,1) on a
+transparent background. The Java plugin tints these to all needed colors at
+runtime. Near-black is used instead of pure black because OSRS treats (0,0,0)
+as transparent.
 
 Usage:
     python generate_sprites.py \
@@ -101,7 +103,9 @@ def parse_codepoints(spec):
 
 def render_sprite(codepoint, font, size):
     """
-    Render a single character as white on transparent background.
+    Render a single character as near-black on transparent background.
+    The Java plugin tints these to all needed colors at runtime.
+    Uses (1,1,1) instead of (0,0,0) because OSRS treats pure black as transparent.
     Returns a PIL Image cropped horizontally to the glyph width, but with
     fixed height so vertical positioning (baseline, middle marks) is preserved.
     Returns None if the character has no visible pixels.
@@ -119,14 +123,14 @@ def render_sprite(codepoint, font, size):
     y_origin = size
     draw.text((x_origin, y_origin), char, font=font, fill=1)
 
-    # Convert to RGBA with white pixels
+    # Convert to RGBA with near-black pixels (1,1,1 — not pure black which OSRS treats as transparent)
     img = img.convert("RGBA")
     pixels = img.load()
     for y in range(img.height):
         for x in range(img.width):
             r, g, b, a = pixels[x, y]
             if r == 255 and g == 255 and b == 255:
-                pixels[x, y] = (255, 255, 255, 255)
+                pixels[x, y] = (1, 1, 1, 255)
             else:
                 pixels[x, y] = (0, 0, 0, 0)
 
@@ -151,7 +155,7 @@ def render_sprite(codepoint, font, size):
 
 
 def generate_sprites(font_file, font_name, pixel_size, codepoints, output_dir):
-    """Generate white sprites for all codepoints and save to output_dir."""
+    """Generate near-black sprites for all codepoints and save to output_dir."""
     os.makedirs(output_dir, exist_ok=True)
 
     try:
@@ -179,7 +183,7 @@ def generate_sprites(font_file, font_name, pixel_size, codepoints, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate white character sprite PNGs for RuneLingual multi-font system."
+        description="Generate character sprite PNGs for RuneLingual multi-font system."
     )
     parser.add_argument(
         "--font-file", required=True,

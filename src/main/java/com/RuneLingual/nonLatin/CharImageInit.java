@@ -160,7 +160,7 @@ public class CharImageInit {
                         int targetG = Integer.parseInt(colorDef[2]);
                         int targetB = Integer.parseInt(colorDef[3]);
 
-                        BufferedImage tinted = tintWhiteSprite(whiteSprite, targetR, targetG, targetB);
+                        BufferedImage tinted = tintSprite(whiteSprite, targetR, targetG, targetB);
                         String imgName = colorName + "--" + codepointStr + ".png";
 
                         if (isUiFont) {
@@ -235,34 +235,29 @@ public class CharImageInit {
     }
 
     /**
-     * Tint a white sprite to a target color by multiplying each pixel's RGB channels.
-     * Pure white (255,255,255) → target color. Gray pixels → proportionally darker.
-     * Alpha channel is preserved. Minimum RGB value is 1 (to avoid OSRS transparency).
+     * Tint a sprite to a target color by replacing all visible pixels' RGB channels.
+     * Any non-transparent pixel becomes the target color. Alpha channel is preserved.
+     * RGB values are clamped to minimum 1 to avoid OSRS treating (0,0,0) as transparent.
      */
-    private BufferedImage tintWhiteSprite(BufferedImage white, int targetR, int targetG, int targetB) {
-        int w = white.getWidth();
-        int h = white.getHeight();
+    private BufferedImage tintSprite(BufferedImage src, int targetR, int targetG, int targetB) {
+        int w = src.getWidth();
+        int h = src.getHeight();
         BufferedImage result = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+
+        int clampedR = Math.max(targetR, 1);
+        int clampedG = Math.max(targetG, 1);
+        int clampedB = Math.max(targetB, 1);
+        int targetArgbNoAlpha = (clampedR << 16) | (clampedG << 8) | clampedB;
 
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                int argb = white.getRGB(x, y);
+                int argb = src.getRGB(x, y);
                 int a = (argb >> 24) & 0xFF;
                 if (a == 0) {
                     result.setRGB(x, y, 0); // fully transparent
-                    continue;
+                } else {
+                    result.setRGB(x, y, (a << 24) | targetArgbNoAlpha);
                 }
-                int srcR = (argb >> 16) & 0xFF;
-                int srcG = (argb >> 8) & 0xFF;
-                int srcB = argb & 0xFF;
-
-                // Multiply: newChannel = (srcChannel * targetChannel) / 255
-                // Clamp to minimum 1 to avoid OSRS treating (0,0,0) as transparent
-                int newR = Math.max((srcR * targetR) / 255, 1);
-                int newG = Math.max((srcG * targetG) / 255, 1);
-                int newB = Math.max((srcB * targetB) / 255, 1);
-
-                result.setRGB(x, y, (a << 24) | (newR << 16) | (newG << 8) | newB);
             }
         }
         return result;
