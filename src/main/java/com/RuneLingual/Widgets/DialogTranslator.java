@@ -64,7 +64,7 @@ public class DialogTranslator {
     private final Colors defaultTextColor = Colors.black;
     private final Colors continueTextColor = Colors.blue;
     private final String continueText = "Click here to continue";
-    private final Colors nameAndSelectOptionTextColor = Colors.red;
+    private final Colors nameAndSelectOptionTextColor = Colors.red2;
     private final String selectOptionText = "Select an option";
     private final Colors pleaseWaitTextColor = Colors.blue;
     private final String pleaseWaitText = "Please wait...";

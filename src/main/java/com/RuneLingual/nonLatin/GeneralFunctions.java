@@ -121,8 +121,9 @@ public class GeneralFunctions {
 
                 if (hash == -99) {//if the char is not in the hashmap, append a question mark
                     imgTagStrings.append("?");
+                    log.error("Char not found in hashmap: char='{}' codepoint={} lookupKey='{}' font='{}' wantNoShadow={} color={}",
+                            String.valueOf(Character.toChars(codePoint)), codePoint, imgName, fontName, wantNoShadow, colors.name());
                     j += Character.isHighSurrogate(part.charAt(j)) ? 2 : 1;
-                    log.error("Char not found in hashmap: {}", part.charAt(j));
                     continue; // bug fix: was missing this continue — would fall through to append invalid img tag
                 }
                 imgTagStrings.append("<img=");

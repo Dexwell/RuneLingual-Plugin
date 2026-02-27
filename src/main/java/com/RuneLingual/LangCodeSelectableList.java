@@ -115,6 +115,15 @@ public enum LangCodeSelectableList
         return langCode.startsWith("ja");
     }
 
+    /**
+     * Get the base language code used for character image sprites.
+     * Variants like ja_nk share sprites with the base language (ja).
+     */
+    public String getCharImageLangCode() {
+        if (this == 日本語_漢字なし) return 日本語.getLangCode();
+        return langCode;
+    }
+
     public static int getLatinCharWidth(Widget widget, LangCodeSelectableList langCode) {
         /*
         494: 5 px

@@ -54,7 +54,10 @@ public class Downloader {//downloads translations and japanese char images to ex
             return;
         }
         final List<String> extensions_to_download = new ArrayList<>(); // will download all files with these extensions
-        if (langCodeSelectableList.needsCharImages()){
+        // Only download zip from hash loop if this language has its own char images
+        // (variants like ja_nk reuse the base language sprites, handled separately below)
+        if (langCodeSelectableList.needsCharImages()
+                && langCodeSelectableList.getCharImageLangCode().equals(langCode)){
             extensions_to_download.add("zip");
         }
         if (langCodeSelectableList.hasLocalTranscript()){
@@ -64,9 +67,14 @@ public class Downloader {//downloads translations and japanese char images to ex
         if (extensions_to_download.isEmpty()) {
             return;
         }
-        final List<String> file_name_to_download = List.of("char_" + langCode + ".zip",
-                "latin2foreign_" + langCode + ".txt",
-                "foreign2foreign_" + langCode + ".txt"); // will download all files with these names, no error if it doesnt exist
+        List<String> fileNames = new ArrayList<>();
+        // Only include char zip in hash-driven downloads if this language has its own sprites
+        if (langCodeSelectableList.getCharImageLangCode().equals(langCode)) {
+            fileNames.add("char_" + langCode + ".zip");
+        }
+        fileNames.add("latin2foreign_" + langCode + ".txt");
+        fileNames.add("foreign2foreign_" + langCode + ".txt");
+        final List<String> file_name_to_download = List.copyOf(fileNames);
         localLangFolder = new File(FileNameAndPath.getLocalLangFolder(langCodeSelectableList));
 
         createDir(localLangFolder.getPath());
@@ -145,8 +153,37 @@ public class Downloader {//downloads translations and japanese char images to ex
             } else {
                 //log.info("All files are up to date.");
             }
+
         } catch (IOException e) {
             log.error("An error occurred: {}", e.getMessage(), e);
+        }
+
+        // Ensure char images are available.
+        // If this language has its own char zip (e.g., char_ja_nk.zip), download and use it.
+        // Otherwise fall back to the base language's sprites (e.g., ja's char_ja/).
+        if (langCodeSelectableList.needsCharImages()) {
+            String charLangCode = langCodeSelectableList.getCharImageLangCode();
+            boolean hasOwnChars = false;
+
+            // For variants, always try to get their own char zip if not already downloaded
+            if (!charLangCode.equals(langCode)) {
+                File ownCharDir = new File(localLangFolder, "char_" + langCode);
+                if (ownCharDir.isDirectory()) {
+                    hasOwnChars = true;
+                } else {
+                    hasOwnChars = downloadCharZipToFolder(langCode, localLangFolder);
+                }
+            }
+
+            // If no variant-specific chars, ensure the base language sprites exist
+            if (!hasOwnChars) {
+                File charBaseFolder = new File(localBaseFolder, charLangCode);
+                File charDir = new File(charBaseFolder, "char_" + charLangCode);
+                if (!charDir.isDirectory()) {
+                    createDir(charBaseFolder.getPath());
+                    downloadCharZipToFolder(charLangCode, charBaseFolder);
+                }
+            }
         }
     }
 
@@ -227,14 +264,18 @@ public class Downloader {//downloads translations and japanese char images to ex
     }
 
     public void updateCharDir(Path localPath) throws IOException {
-        URL fileUrl3 = new URL(GITHUB_BASE_URL + "/char_" + langCode + ".zip");
+        URL fileUrl3 = new URL(GITHUB_BASE_URL + "char_" + langCode + ".zip");
         Files.copy(fileUrl3.openStream(), localPath, StandardCopyOption.REPLACE_EXISTING);
-        unzip(String.valueOf(localPath), localLangFolder.getPath());
+        unzipCharDir(String.valueOf(localPath), localLangFolder.getPath(), langCode);
         Files.delete(localPath);
     }
 
-    public void unzip(String zipFilePath, String destDir) {
-        FileActions.deleteFolder(destDir + File.separator + "char_" + langCode);
+    public void unzipCharDir(String zipFilePath, String destDir, String charLangCode) {
+        File charDir = new File(destDir + File.separator + "char_" + charLangCode);
+        if (charDir.isFile()) {
+            charDir.delete(); // clean up if a previous bad unzip left a file instead of a directory
+        }
+        FileActions.deleteFolder(charDir.getPath());
         //log.info("unzipping " + zipFilePath + " to " + destDir);
         File dir = new File(destDir);
         // create output directory if it doesn't exist
@@ -249,14 +290,18 @@ public class Downloader {//downloads translations and japanese char images to ex
             while (ze != null) {
                 String fileName = ze.getName();
                 File newFile = new File(destDir + File.separator + fileName);
-                //create directories for sub directories in zip
-                new File(newFile.getParent()).mkdirs();
-                FileOutputStream fos = new FileOutputStream(newFile);
-                int len;
-                while ((len = zis.read(buffer)) > 0) {
-                    fos.write(buffer, 0, len);
+                if (ze.isDirectory()) {
+                    newFile.mkdirs();
+                } else {
+                    //create directories for sub directories in zip
+                    new File(newFile.getParent()).mkdirs();
+                    FileOutputStream fos = new FileOutputStream(newFile);
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        fos.write(buffer, 0, len);
+                    }
+                    fos.close();
                 }
-                fos.close();
                 //close this ZipEntry
                 zis.closeEntry();
                 ze = zis.getNextEntry();
@@ -270,13 +315,45 @@ public class Downloader {//downloads translations and japanese char images to ex
         }
     }
 
+    /**
+     * Download char_{charLangCode}.zip and extract it into destFolder.
+     * Returns true if successful, false if the zip doesn't exist or download failed.
+     */
+    private boolean downloadCharZipToFolder(String charLangCode, File destFolder) {
+        try {
+            // Derive URL from GITHUB_BASE_URL, replacing current langCode with charLangCode
+            String baseUrl = GITHUB_BASE_URL.substring(0, GITHUB_BASE_URL.length() - langCode.length() - 1)
+                    + charLangCode + "/";
+            String charZipUrl = baseUrl + "char_" + charLangCode + ".zip";
+            if (!isURLReachable(charZipUrl, 1500)) {
+                log.info("char_{}.zip not available at {}", charLangCode, charZipUrl);
+                return false;
+            }
+
+            Path localZipPath = Paths.get(destFolder.getPath(), "char_" + charLangCode + ".zip");
+            log.info("Downloading char images from {}", charZipUrl);
+            Files.copy(new URL(charZipUrl).openStream(), localZipPath, StandardCopyOption.REPLACE_EXISTING);
+            unzipCharDir(String.valueOf(localZipPath), destFolder.getPath(), charLangCode);
+            Files.delete(localZipPath);
+            log.info("Successfully downloaded and extracted char images for {} to {}", charLangCode, destFolder);
+            return true;
+        } catch (IOException e) {
+            log.error("Error downloading char images for {}: {}", charLangCode, e.getMessage(), e);
+            return false;
+        }
+    }
+
     public static boolean isURLReachable(String urlString) {
+        return isURLReachable(urlString, 5000);
+    }
+
+    public static boolean isURLReachable(String urlString, int timeoutMs) {
         try {
             URL url = new URL(urlString);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("HEAD");
-            connection.setConnectTimeout(5000); // 5 seconds timeout
-            connection.setReadTimeout(5000);
+            connection.setConnectTimeout(timeoutMs);
+            connection.setReadTimeout(timeoutMs);
             int responseCode = connection.getResponseCode();
             return (200 <= responseCode && responseCode < 400);
         } catch (Exception e) {

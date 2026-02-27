@@ -30,7 +30,7 @@ public enum Colors {
     orange2("ff9040","orange"),
     orange3("ff981f","orange"),
     red("ff0000","red"),
-    red2("800000","red"),
+    red2("800000","darkred"),
     red3("6800bf","red"),
     white("ffffff","white"),
     white2("9f9f9f","white"),
@@ -72,6 +72,9 @@ public enum Colors {
     public static Colors fromName(String colorName){
         if (colorName.equals(red.getName())){
             return getColorFromHex(red.getHex());
+        }
+        if (colorName.equals(red2.getName())){
+            return getColorFromHex(red2.getHex());
         }
         if (colorName.equals(black.getName())){
             return getColorFromHex(black.getHex());
@@ -168,6 +171,9 @@ public enum Colors {
         }
         if (this.getName().equals(Colors.red.getName())){ //if the color is red
             return Colors.red;
+        }
+        if (this.getName().equals(Colors.red2.getName())){ //if the color is dark red
+            return Colors.red2;
         }
         if (this.getName().equals(Colors.blue.getName())){ //if the color is blue
             return Colors.blue;

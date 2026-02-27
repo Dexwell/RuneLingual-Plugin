@@ -34,9 +34,7 @@ public class FileNameAndPath {
         //create the file if it doesn't exist
         File file = new File(filePath);
         try {
-            if (!file.createNewFile()) {
-                log.error("File already exists: {}", filePath);
-            }
+            file.createNewFile(); // returns false if already exists, which is fine
         } catch (Exception e) {
             log.error("Error creating file: {}", e.getMessage());
         }

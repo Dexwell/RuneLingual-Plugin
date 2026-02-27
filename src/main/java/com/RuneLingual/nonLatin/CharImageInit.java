@@ -45,6 +45,7 @@ public class CharImageInit {
     private static final String[][] TINT_COLORS = {
             {"black",     "1",   "1",   "1"  },
             {"blue",      "0",   "0",   "255"},
+            {"darkred",   "128", "0",   "0"  },
             {"green",     "0",   "255", "0"  },
             {"lightblue", "0",   "255", "255"},
             {"orange",    "255", "112", "0"  },
@@ -76,7 +77,16 @@ public class CharImageInit {
 
         Downloader downloader = runeLingualPlugin.getDownloader();
         String langCode = downloader.getLangCode();
-        final String pathToChar = downloader.getLocalLangFolder().toString() + File.separator + "char_" + langCode;
+
+        // Check for this language's own char directory first (e.g., ja_nk/char_ja_nk)
+        String pathToChar = downloader.getLocalLangFolder().toString() + File.separator + "char_" + langCode;
+
+        // If not found, use the base language's char directory (e.g., ja/char_ja)
+        if (!new File(pathToChar).isDirectory()) {
+            String charLangCode = runeLingualPlugin.getTargetLanguage().getCharImageLangCode();
+            File baseFolder = new File(Downloader.getLocalBaseFolder(), charLangCode);
+            pathToChar = new File(baseFolder, "char_" + charLangCode).getPath();
+        }
 
         // Check for font subdirectories
         String[] fontDirs = detectFontDirectories(pathToChar);
@@ -88,11 +98,11 @@ public class CharImageInit {
                 availableFonts.add(fontDir);
             }
             loadMultiFontCharImages(pathToChar, fontDirs, chatIconManager, charIds);
-            log.info("Multi-font mode: loaded fonts {} (default: {})", availableFonts, defaultFont);
+            log.info("Multi-font mode: loaded fonts {} (default: {}), charIds size={}", availableFonts, defaultFont, charIds.size());
         } else {
             // Legacy mode: load pre-colored PNGs from flat directory
             loadLegacyCharImages(pathToChar, chatIconManager, charIds);
-            log.info("Legacy mode: loaded pre-colored sprites from {}", pathToChar);
+            log.info("Legacy mode: loaded pre-colored sprites from {}, charIds size={}", pathToChar, charIds.size());
         }
     }
 
