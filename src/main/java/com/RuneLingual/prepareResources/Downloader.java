@@ -98,6 +98,7 @@ public class Downloader {//downloads translations and japanese char images to ex
         }
 
         String REMOTE_HASH_FILE = GITHUB_BASE_URL + "hashList_" + langCode + ".txt";
+        log.info("Checking hashes from: {}", REMOTE_HASH_FILE);
 
         try {
             Path dirPath = Paths.get(localBaseFolder.getPath());
@@ -112,6 +113,8 @@ public class Downloader {//downloads translations and japanese char images to ex
 
             Map<String, String> localHashes = readHashFile(Paths.get(localLangFolder.getPath(), LOCAL_HASH_NAME));
             Map<String, String> remoteHashes = readHashFile(new URL(REMOTE_HASH_FILE));
+            log.info("Local hashes: {}", localHashes);
+            log.info("Remote hashes: {}", remoteHashes);
 
             boolean dataChanged = false;
             boolean transcriptChanged = false;
@@ -124,9 +127,15 @@ public class Downloader {//downloads translations and japanese char images to ex
                 String remote_full_path = entry.getKey();
                 Connection conn = plugin.getH2Manager().getConn(plugin.getTargetLanguage());
 
-                if ((localHash == null || !localHash.equals(remoteHash) || SqlActions.noTableExistsOrIsEmpty(conn)) // if the file is not in the local hash file OR the hash value is different OR the table TRANSCRIPT exists but empty
-                        && (fileExtensionIncludedIn(remote_full_path, extensions_to_download) // and if the file extension is in the list of extensions to download
-                        || same_file_included(remote_full_path, file_name_to_download))) { // or if the file name is in the list of file names to download
+                boolean hashDiffers = localHash == null || !localHash.equals(remoteHash);
+                boolean extMatch = fileExtensionIncludedIn(remote_full_path, extensions_to_download);
+                boolean nameMatch = same_file_included(remote_full_path, file_name_to_download);
+                log.info("Hash check: file='{}' hashDiffers={} extMatch={} nameMatch={} localHash='{}' remoteHash='{}'",
+                        remote_full_path, hashDiffers, extMatch, nameMatch, localHash, remoteHash);
+
+                if ((hashDiffers || SqlActions.noTableExistsOrIsEmpty(conn)) // if the file is not in the local hash file OR the hash value is different OR the table TRANSCRIPT exists but empty
+                        && (extMatch // and if the file extension is in the list of extensions to download
+                        || nameMatch)) { // or if the file name is in the list of file names to download
 
                     dataChanged = true;
                     downloadAndUpdateFile(remote_full_path);
@@ -175,12 +184,46 @@ public class Downloader {//downloads translations and japanese char images to ex
                 }
             }
 
-            // If no variant-specific chars, ensure the base language sprites exist
+            // If no variant-specific chars, ensure the base language sprites exist and are up to date
             if (!hasOwnChars) {
                 File charBaseFolder = new File(localBaseFolder, charLangCode);
                 File charDir = new File(charBaseFolder, "char_" + charLangCode);
-                if (!charDir.isDirectory()) {
-                    createDir(charBaseFolder.getPath());
+                createDir(charBaseFolder.getPath());
+
+                boolean needsDownload = !charDir.isDirectory();
+
+                // Also check if the base language's char zip hash has changed
+                if (!needsDownload) {
+                    try {
+                        String baseHashUrl = GITHUB_BASE_URL.substring(0, GITHUB_BASE_URL.length() - langCode.length() - 1)
+                                + charLangCode + "/";
+                        String remoteBaseHashFile = baseHashUrl + "hashList_" + charLangCode + ".txt";
+                        String localBaseHashName = "hashListLocal_" + charLangCode + ".txt";
+                        Path localBaseHashPath = Paths.get(charBaseFolder.getPath(), localBaseHashName);
+
+                        Map<String, String> localBaseHashes = readHashFile(localBaseHashPath);
+                        Map<String, String> remoteBaseHashes = readHashFile(new URL(remoteBaseHashFile));
+
+                        String charZipKey = "char_" + charLangCode + ".zip";
+                        String localCharHash = localBaseHashes.get(charZipKey);
+                        String remoteCharHash = remoteBaseHashes.get(charZipKey);
+
+                        if (remoteCharHash != null && !remoteCharHash.equals(localCharHash)) {
+                            log.info("Base language char zip hash changed for {}: local='{}' remote='{}'",
+                                    charLangCode, localCharHash, remoteCharHash);
+                            needsDownload = true;
+                        }
+
+                        // Update the local hash file for the base language
+                        if (needsDownload) {
+                            Files.copy(new URL(remoteBaseHashFile).openStream(), localBaseHashPath, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                    } catch (IOException e) {
+                        log.error("Error checking base language hashes for {}: {}", charLangCode, e.getMessage());
+                    }
+                }
+
+                if (needsDownload) {
                     downloadCharZipToFolder(charLangCode, charBaseFolder);
                 }
             }

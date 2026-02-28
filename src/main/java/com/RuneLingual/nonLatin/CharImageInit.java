@@ -1,11 +1,9 @@
 package com.RuneLingual.nonLatin;
 
-import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.util.*;
-import java.util.List;
 
 import com.RuneLingual.prepareResources.Downloader;
 import com.RuneLingual.RuneLingualPlugin;
@@ -38,7 +36,7 @@ public class CharImageInit {
     ));
 
     /**
-     * Tint colors — white source sprites are tinted to each of these at load time.
+     * Tint colors — white source sprites are tinted to each of these at startup.
      * Format: { colorName, R, G, B }.
      * "black" uses (1,1,1) because OSRS treats pure (0,0,0) as transparent.
      */
@@ -54,7 +52,19 @@ public class CharImageInit {
             {"yellow",    "255", "255", "0"  },
     };
 
-    /** Fonts that were detected and loaded. */
+    /** Map from colorName to {R, G, B} for quick lookup. */
+    private static final Map<String, int[]> COLOR_RGB = new HashMap<>();
+    static {
+        for (String[] def : TINT_COLORS) {
+            COLOR_RGB.put(def[0], new int[]{
+                    Integer.parseInt(def[1]),
+                    Integer.parseInt(def[2]),
+                    Integer.parseInt(def[3])
+            });
+        }
+    }
+
+    /** Fonts that were detected. */
     @Getter
     private final Set<String> availableFonts = new LinkedHashSet<>();
 
@@ -62,24 +72,30 @@ public class CharImageInit {
     @Getter
     private String defaultFont = null;
 
-    /*
-     * Load character images from the local folder, and register them to the chatIconManager.
-     * Detects whether multi-font directories exist; if so, loads white sprites per font
-     * and tints them to all colors at runtime. Otherwise falls back to legacy pre-colored PNGs.
+    /** Path to the char image directory (set during indexing). */
+    private String pathToChar = null;
+
+    /** Whether plain11 font is available (cached for alias logic). */
+    private boolean plain11Available = false;
+
+    /**
+     * Eagerly load all character images: read each white source PNG once,
+     * tint to all 9 colors, create shadow/noshadow variants, and register with ChatIconManager.
+     *
+     * Uses a local cache so each white PNG is only read from disk once across all color tints.
+     * Combined with charImagesAlreadyLoaded() in RuneLingualPlugin, this means switching
+     * between language variants that share sprites (e.g. ja ↔ ja_nk) is instant.
      */
     public void loadCharImages() {
         if (!runeLingualPlugin.getTargetLanguage().needsCharImages()) {
             return;
         }
 
-        ChatIconManager chatIconManager = runeLingualPlugin.getChatIconManager();
-        HashMap<String, Integer> charIds = runeLingualPlugin.getCharIds();
-
         Downloader downloader = runeLingualPlugin.getDownloader();
         String langCode = downloader.getLangCode();
 
         // Check for this language's own char directory first (e.g., ja_nk/char_ja_nk)
-        String pathToChar = downloader.getLocalLangFolder().toString() + File.separator + "char_" + langCode;
+        pathToChar = downloader.getLocalLangFolder().toString() + File.separator + "char_" + langCode;
 
         // If not found, use the base language's char directory (e.g., ja/char_ja)
         if (!new File(pathToChar).isDirectory()) {
@@ -92,23 +108,126 @@ public class CharImageInit {
         String[] fontDirs = detectFontDirectories(pathToChar);
 
         if (fontDirs.length > 0) {
-            // Multi-font mode: load white sprites per font, tint to all colors
-            defaultFont = determineDefaultFont(fontDirs);
-            for (String fontDir : fontDirs) {
-                availableFonts.add(fontDir);
-            }
-            loadMultiFontCharImages(pathToChar, fontDirs, chatIconManager, charIds);
-            log.info("Multi-font mode: loaded fonts {} (default: {}), charIds size={}", availableFonts, defaultFont, charIds.size());
+            loadMultiFont(fontDirs);
         } else {
-            // Legacy mode: load pre-colored PNGs from flat directory
-            loadLegacyCharImages(pathToChar, chatIconManager, charIds);
-            log.info("Legacy mode: loaded pre-colored sprites from {}, charIds size={}", pathToChar, charIds.size());
+            loadLegacy();
         }
     }
 
     /**
-     * Check which known font subdirectories exist under pathToChar.
+     * Multi-font mode: for each font directory, read each white PNG once,
+     * then tint to all 9 colors and register all key variants.
      */
+    private void loadMultiFont(String[] fontDirs) {
+        defaultFont = determineDefaultFont(fontDirs);
+        plain11Available = false;
+
+        HashMap<String, Integer> charIds = runeLingualPlugin.getCharIds();
+        ChatIconManager chatIconManager = runeLingualPlugin.getChatIconManager();
+
+        long startTime = System.currentTimeMillis();
+        int totalRegistered = 0;
+
+        for (String fontDir : fontDirs) {
+            availableFonts.add(fontDir);
+            if (fontDir.equals("plain11")) plain11Available = true;
+
+            String fontPath = pathToChar + File.separator + fontDir;
+            String[] codepointFiles = getCharList(fontPath);
+
+            boolean isUiFont = UI_FONTS.contains(fontDir);
+            boolean isDefault = fontDir.equals(defaultFont);
+
+            for (String codepointPng : codepointFiles) {
+                // Read the white source PNG once
+                BufferedImage whiteSprite;
+                try {
+                    whiteSprite = ImageIO.read(new File(fontPath + File.separator + codepointPng));
+                } catch (Exception e) {
+                    log.error("Error reading sprite: {}/{}", fontDir, codepointPng, e);
+                    continue;
+                }
+
+                // Tint to each color and register
+                for (String[] colorDef : TINT_COLORS) {
+                    String colorName = colorDef[0];
+                    int r = Integer.parseInt(colorDef[1]);
+                    int g = Integer.parseInt(colorDef[2]);
+                    int b = Integer.parseInt(colorDef[3]);
+
+                    BufferedImage tinted = tintSprite(whiteSprite, r, g, b);
+                    String imgName = colorName + "--" + codepointPng;
+
+                    if (isUiFont) {
+                        BufferedImage shadowed = addDropShadow(tinted);
+                        int shadowHash = chatIconManager.registerChatIcon(shadowed);
+                        int plainHash = chatIconManager.registerChatIcon(tinted);
+
+                        charIds.put(fontDir + ":" + imgName, shadowHash);
+                        charIds.put("noshadow_" + fontDir + ":" + imgName, plainHash);
+
+                        if (isDefault) {
+                            charIds.put(imgName, shadowHash);
+                            charIds.put("noshadow_" + imgName, plainHash);
+                        }
+
+                        // plain12 also serves plain11 if plain11 is not available
+                        if (fontDir.equals("plain12") && !plain11Available) {
+                            charIds.put("plain11:" + imgName, shadowHash);
+                            charIds.put("noshadow_plain11:" + imgName, plainHash);
+                        }
+
+                        totalRegistered += 2;
+                    } else {
+                        int plainHash = chatIconManager.registerChatIcon(tinted);
+                        charIds.put(fontDir + ":" + imgName, plainHash);
+
+                        if (isDefault) {
+                            charIds.put(imgName, plainHash);
+                        }
+
+                        totalRegistered += 1;
+                    }
+                }
+            }
+        }
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("Multi-font mode: registered {} sprites for fonts {} (default: {}) in {}ms",
+                totalRegistered, availableFonts, defaultFont, elapsed);
+    }
+
+    /**
+     * Legacy mode: load pre-colored PNGs and register with shadow/noshadow variants.
+     */
+    private void loadLegacy() {
+        HashMap<String, Integer> charIds = runeLingualPlugin.getCharIds();
+        ChatIconManager chatIconManager = runeLingualPlugin.getChatIconManager();
+
+        String[] files = getCharList(pathToChar);
+        long startTime = System.currentTimeMillis();
+        int totalRegistered = 0;
+
+        for (String imgName : files) {
+            try {
+                BufferedImage image = ImageIO.read(new File(pathToChar + File.separator + imgName));
+                BufferedImage shadowed = addDropShadow(image);
+                int shadowHash = chatIconManager.registerChatIcon(shadowed);
+                int plainHash = chatIconManager.registerChatIcon(image);
+                charIds.put(imgName, shadowHash);
+                charIds.put("noshadow_" + imgName, plainHash);
+                totalRegistered += 2;
+            } catch (Exception e) {
+                log.error("Error loading legacy sprite: {}", imgName, e);
+            }
+        }
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("Legacy mode: registered {} sprites from {} in {}ms", totalRegistered, pathToChar, elapsed);
+    }
+
+    // ---- Utility methods ----
+
     private String[] detectFontDirectories(String pathToChar) {
         List<String> found = new ArrayList<>();
         for (String fontName : KNOWN_FONT_NAMES) {
@@ -120,135 +239,14 @@ public class CharImageInit {
         return found.toArray(new String[0]);
     }
 
-    /**
-     * Determine the default font from available font directories.
-     * Preference: bold12 > plain12 > plain11 > first available.
-     * bold12 is preferred because OSRS uses it for menus, hover text,
-     * and most UI elements. plain12 is for longer body text (widgets, chat).
-     */
     private String determineDefaultFont(String[] fontDirs) {
         Set<String> available = new LinkedHashSet<>(Arrays.asList(fontDirs));
         if (available.contains("bold12")) return "bold12";
         if (available.contains("plain12")) return "plain12";
         if (available.contains("plain11")) return "plain11";
-        return fontDirs[0]; // fallback to first found
+        return fontDirs[0];
     }
 
-    /**
-     * Multi-font mode: for each font directory, load white PNGs, tint to each color,
-     * and register with/without shadow based on font type.
-     *
-     * Registration keys:
-     *   - UI fonts (shadow):    "fontName:color--codepoint.png" → shadow sprite hash
-     *   - UI fonts (noshadow):  "noshadow_fontName:color--codepoint.png" → plain sprite hash
-     *   - Default font also gets unprefixed keys: "color--codepoint.png" and "noshadow_color--codepoint.png"
-     *   - plain12 also serves plain11 if plain11 not available (registered under "plain11:..." keys)
-     *   - Dialogue fonts: "fontName:color--codepoint.png" → plain sprite hash (no shadow, no noshadow variant)
-     */
-    private void loadMultiFontCharImages(String pathToChar, String[] fontDirs,
-                                         ChatIconManager chatIconManager,
-                                         HashMap<String, Integer> charIds) {
-        boolean plain11Available = availableFonts.contains("plain11");
-
-        for (String fontName : fontDirs) {
-            String fontPath = pathToChar + File.separator + fontName;
-            String[] whiteFiles = getCharList(fontPath);
-            boolean isUiFont = UI_FONTS.contains(fontName);
-            boolean isDefault = fontName.equals(defaultFont);
-
-            for (String whiteFileName : whiteFiles) {
-                try {
-                    File file = new File(fontPath + File.separator + whiteFileName);
-                    BufferedImage whiteSprite = ImageIO.read(file);
-
-                    // Extract codepoint from filename: "3021.png" → "3021"
-                    String codepointStr = whiteFileName.substring(0, whiteFileName.length() - 4);
-
-                    for (String[] colorDef : TINT_COLORS) {
-                        String colorName = colorDef[0];
-                        int targetR = Integer.parseInt(colorDef[1]);
-                        int targetG = Integer.parseInt(colorDef[2]);
-                        int targetB = Integer.parseInt(colorDef[3]);
-
-                        BufferedImage tinted = tintSprite(whiteSprite, targetR, targetG, targetB);
-                        String imgName = colorName + "--" + codepointStr + ".png";
-
-                        if (isUiFont) {
-                            // UI font: register shadow version and noshadow version
-                            BufferedImage shadowed = addDropShadow(tinted);
-
-                            // Font-prefixed keys
-                            String fontKey = fontName + ":" + imgName;
-                            String noshadowFontKey = "noshadow_" + fontName + ":" + imgName;
-                            int shadowHash = chatIconManager.registerChatIcon(shadowed);
-                            int plainHash = chatIconManager.registerChatIcon(tinted);
-                            charIds.put(fontKey, shadowHash);
-                            charIds.put(noshadowFontKey, plainHash);
-
-                            // Default font also gets unprefixed keys
-                            if (isDefault) {
-                                charIds.put(imgName, shadowHash);
-                                charIds.put("noshadow_" + imgName, plainHash);
-                            }
-
-                            // plain12 also serves plain11 if plain11 is not available
-                            if (fontName.equals("plain12") && !plain11Available) {
-                                charIds.put("plain11:" + imgName, shadowHash);
-                                charIds.put("noshadow_plain11:" + imgName, plainHash);
-                            }
-                        } else {
-                            // Dialogue font: register without shadow, no noshadow variant needed
-                            String fontKey = fontName + ":" + imgName;
-                            int plainHash = chatIconManager.registerChatIcon(tinted);
-                            charIds.put(fontKey, plainHash);
-
-                            // If this dialogue font is also somehow the default, register unprefixed
-                            if (isDefault) {
-                                charIds.put(imgName, plainHash);
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    log.error("Error loading multi-font sprite: {}/{}", fontName, whiteFileName, e);
-                }
-            }
-        }
-    }
-
-    /**
-     * Legacy mode: load pre-colored PNGs directly (e.g. "yellow--3021.png").
-     * Registers shadow version under the original name and noshadow version under "noshadow_" prefix.
-     */
-    private void loadLegacyCharImages(String pathToChar,
-                                      ChatIconManager chatIconManager,
-                                      HashMap<String, Integer> charIds) {
-        String[] charNameArray = getCharList(pathToChar);
-
-        for (String imageName : charNameArray) {
-            try {
-                String fullPath = pathToChar + File.separator + imageName;
-                File externalCharImg = new File(fullPath);
-                final BufferedImage image = ImageIO.read(externalCharImg);
-
-                // Shadow version (default for UI/menus)
-                BufferedImage shadowed = addDropShadow(image);
-                final int shadowHash = chatIconManager.registerChatIcon(shadowed);
-                charIds.put(imageName, shadowHash);
-
-                // Noshadow version (for dialogue)
-                final int plainHash = chatIconManager.registerChatIcon(image);
-                charIds.put("noshadow_" + imageName, plainHash);
-            } catch (Exception e) {
-                log.error("error:", e);
-            }
-        }
-    }
-
-    /**
-     * Tint a sprite to a target color by replacing all visible pixels' RGB channels.
-     * Any non-transparent pixel becomes the target color. Alpha channel is preserved.
-     * RGB values are clamped to minimum 1 to avoid OSRS treating (0,0,0) as transparent.
-     */
     private BufferedImage tintSprite(BufferedImage src, int targetR, int targetG, int targetB) {
         int w = src.getWidth();
         int h = src.getHeight();
@@ -264,7 +262,7 @@ public class CharImageInit {
                 int argb = src.getRGB(x, y);
                 int a = (argb >> 24) & 0xFF;
                 if (a == 0) {
-                    result.setRGB(x, y, 0); // fully transparent
+                    result.setRGB(x, y, 0);
                 } else {
                     result.setRGB(x, y, (a << 24) | targetArgbNoAlpha);
                 }
@@ -273,18 +271,12 @@ public class CharImageInit {
         return result;
     }
 
-    /**
-     * Add a 1px drop shadow at offset (+1, +1) using near-black (1,1,1).
-     * The shadow is drawn behind the original image on a larger canvas.
-     */
     private BufferedImage addDropShadow(BufferedImage src) {
         int w = src.getWidth();
         int h = src.getHeight();
-        // Canvas is 1px wider and 1px taller to accommodate shadow offset
         BufferedImage result = new BufferedImage(w + 1, h + 1, BufferedImage.TYPE_INT_ARGB);
 
-        // Draw shadow first (offset +1, +1)
-        int shadowColor = 0xFF010101; // near-black, not pure black (which OSRS treats as transparent)
+        int shadowColor = 0xFF010101;
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int argb = src.getRGB(x, y);
@@ -295,7 +287,6 @@ public class CharImageInit {
             }
         }
 
-        // Draw original image on top (offset 0, 0)
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int argb = src.getRGB(x, y);
@@ -309,24 +300,16 @@ public class CharImageInit {
         return result;
     }
 
-    /** Check if a specific font is available (was detected and loaded). */
     public boolean hasFontAvailable(String fontName) {
         return availableFonts.contains(fontName);
     }
 
-    /** Whether multi-font mode is active (at least one font directory was found). */
     public boolean isMultiFontMode() {
         return defaultFont != null;
     }
 
-    /** Get list of PNG filenames in a directory. */
     public String[] getCharList(String pathToChar) {
-        FilenameFilter pngFilter = new FilenameFilter() {
-            @Override
-            public boolean accept(File dir, String name) {
-                return name.toLowerCase().endsWith(".png");
-            }
-        };
+        FilenameFilter pngFilter = (dir, name) -> name.toLowerCase().endsWith(".png");
         File colorDir = new File(pathToChar + "/");
         File[] files = colorDir.listFiles(pngFilter);
 

@@ -19,8 +19,7 @@ import net.runelite.api.gameval.InterfaceID.*;
 import net.runelite.client.game.ChatIconManager;
 
 import javax.inject.Inject;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -82,7 +81,7 @@ public class DialogTranslator {
     private WidgetsUtilRLingual widgetsUtilRLingual;
 
     private static final Pattern IMG_TAG_PATTERN = Pattern.compile("<img=(\\d+)>");
-    // Maps shadow sprite img index → noshadow sprite img index (built lazily)
+    // Maps shadow sprite img index → noshadow sprite img index
     private Map<Integer, Integer> toNoShadowMap = null;
 
     @Inject
@@ -94,27 +93,23 @@ public class DialogTranslator {
     }
 
     /**
-     * Build mapping from shadow sprite index → noshadow sprite index.
-     * Default sprites (registered under original name) have shadows baked in;
-     * noshadow variants are registered with "noshadow_" prefix.
+     * Build a map from shadow sprite img index → noshadow sprite img index.
+     * For each non-noshadow key in charIds, looks up the corresponding "noshadow_" key
+     * and maps the shadow chatIconIndex → noshadow chatIconIndex.
      */
     private void buildNoShadowMap() {
         toNoShadowMap = new HashMap<>();
         HashMap<String, Integer> charIds = plugin.getCharIds();
         ChatIconManager chatIconManager = plugin.getChatIconManager();
-        if (charIds == null || charIds.isEmpty()) return;
 
         for (Map.Entry<String, Integer> entry : charIds.entrySet()) {
             String name = entry.getKey();
-            if (!name.startsWith("noshadow_")) continue;
+            if (name.startsWith("noshadow_")) continue;
 
-            String originalName = name.substring("noshadow_".length());
-            Integer shadowHash = charIds.get(originalName);
-            if (shadowHash == null) continue;
-
-            int shadowIdx = chatIconManager.chatIconIndex(shadowHash);
-            int noShadowIdx = chatIconManager.chatIconIndex(entry.getValue());
-            if (shadowIdx >= 0 && noShadowIdx >= 0) {
+            Integer noShadowHash = charIds.get("noshadow_" + name);
+            if (noShadowHash != null) {
+                int shadowIdx = chatIconManager.chatIconIndex(entry.getValue());
+                int noShadowIdx = chatIconManager.chatIconIndex(noShadowHash);
                 toNoShadowMap.put(shadowIdx, noShadowIdx);
             }
         }
@@ -127,8 +122,10 @@ public class DialogTranslator {
     private String swapToNoShadow(String text) {
         if (text == null || !text.contains("<img=")) return text;
         if (!plugin.getTargetLanguage().needsCharImages()) return text;
-        if (toNoShadowMap == null) buildNoShadowMap();
-        if (toNoShadowMap.isEmpty()) return text;
+
+        if (toNoShadowMap == null) {
+            buildNoShadowMap();
+        }
 
         Matcher matcher = IMG_TAG_PATTERN.matcher(text);
         StringBuffer sb = new StringBuffer();
@@ -149,17 +146,21 @@ public class DialogTranslator {
         if (!charImageInit.isMultiFontMode()) return null;
         if (charImageInit.hasFontAvailable("quill8")) return "quill8";
         if (charImageInit.hasFontAvailable("quill")) return "quill";
+        if (charImageInit.hasFontAvailable("plain12")) return "plain12";
         return null; // no dialogue font available; will fall back to noshadow swap
     }
 
-    /** Set widget text, using dialogue font sprites or noshadow swap for dialogue. */
+    /** Fonts that are dialogue-specific and already rendered without shadows. */
+    private static final Set<String> DIALOGUE_FONTS = new HashSet<>(Arrays.asList("quill", "quill8"));
+
+    /** Set widget text, using noshadow swap when the font has shadow variants. */
     private void setDialogText(Widget widget, String text) {
-        if (getDialogueFont() != null) {
-            // Multi-font mode with dialogue font: sprites were already rendered
-            // with the correct font via setCurrentFont(), no swap needed
+        String dialogueFont = getDialogueFont();
+        if (dialogueFont != null && DIALOGUE_FONTS.contains(dialogueFont)) {
+            // Dialogue font (quill/quill8) has no shadow variants, no swap needed
             widget.setText(text);
         } else {
-            // Legacy or single-font mode: swap shadow sprites to noshadow variants
+            // UI font fallback or legacy mode: swap shadow sprites to noshadow variants
             widget.setText(swapToNoShadow(text));
         }
     }

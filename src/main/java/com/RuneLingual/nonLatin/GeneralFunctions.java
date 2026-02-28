@@ -14,8 +14,6 @@ import java.util.regex.Pattern;
 @javax.inject.Singleton
 public class GeneralFunctions {
     @Inject
-    private CharImageInit charImageInit;
-    @Inject
     private RuneLingualPlugin runeLingualPlugin;
 
     /** Current font context for StringToTags calls going through Transformer. */
@@ -86,7 +84,6 @@ public class GeneralFunctions {
             }
             StringBuilder imgTagStrings = new StringBuilder();
             ChatIconManager chatIconManager = runeLingualPlugin.getChatIconManager();
-            HashMap<String, Integer> map = runeLingualPlugin.getCharIds();
             for (int j = 0; j < part.length(); ) {//if the part is not an img tag, convert each letters to letter emojis
 
                 int codePoint = part.codePointAt(j);
@@ -101,6 +98,7 @@ public class GeneralFunctions {
                 // Use noshadow when: currentUseShadow is false, OR color is black
                 // (black shadow behind black text is invisible and just makes text look thicker).
                 boolean wantNoShadow = !currentUseShadow || colors.getName().startsWith("black");
+                HashMap<String, Integer> map = runeLingualPlugin.getCharIds();
                 int hash = -99;
                 if (fontName != null) {
                     if (wantNoShadow) {
@@ -124,7 +122,7 @@ public class GeneralFunctions {
                     log.error("Char not found in hashmap: char='{}' codepoint={} lookupKey='{}' font='{}' wantNoShadow={} color={}",
                             String.valueOf(Character.toChars(codePoint)), codePoint, imgName, fontName, wantNoShadow, colors.name());
                     j += Character.isHighSurrogate(part.charAt(j)) ? 2 : 1;
-                    continue; // bug fix: was missing this continue — would fall through to append invalid img tag
+                    continue;
                 }
                 imgTagStrings.append("<img=");
                 imgTagStrings.append(chatIconManager.chatIconIndex(hash));

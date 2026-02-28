@@ -3,7 +3,6 @@ package com.RuneLingual.MouseOverlays;
 import com.RuneLingual.LangCodeSelectableList;
 import com.RuneLingual.RuneLingualConfig;
 import com.RuneLingual.RuneLingualPlugin;
-
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.util.*;
@@ -51,64 +50,45 @@ public class MenuEntryHighlightOverlay extends Overlay {
     }
 
     /**
-     * Build a mapping from any registered img index to the yellow sprite for the same codepoint.
-     * e.g. if charIds has "white--3021.png" -> imgIndex 42 and "yellow--3021.png" -> imgIndex 87,
-     * then toYellowMap[42] = 87.
-     * Only maps default (shadow) sprites; noshadow variants are used only in dialogue.
+     * Build a map from any registered img index to its yellow-colored equivalent.
+     * For each non-yellow, non-noshadow, unprefixed key in charIds, looks up
+     * the corresponding "yellow--codepoint.png" key and maps the img indices.
      */
     private void buildColorSwapMap() {
         toYellowMap = new HashMap<>();
         HashMap<String, Integer> charIds = plugin.getCharIds();
         ChatIconManager chatIconManager = plugin.getChatIconManager();
 
-        if (charIds == null || charIds.isEmpty()) {
-            return;
-        }
-
-        // First pass: collect yellow sprites by codepoint
-        // Only use unprefixed (default font) entries; skip font-prefixed (e.g. "plain12:yellow--3021.png")
-        // and noshadow variants since menus always use the default shadowed sprites.
-        Map<String, Integer> yellowByCodepoint = new HashMap<>();
         for (Map.Entry<String, Integer> entry : charIds.entrySet()) {
-            String imageName = entry.getKey();
-            // Skip noshadow variants — they are only used in dialogue, not menus
-            if (imageName.startsWith("noshadow_")) continue;
-            // Skip font-prefixed entries (e.g. "plain12:yellow--3021.png") — only use default font
-            if (imageName.contains(":")) continue;
+            String name = entry.getKey();
+            // Only match unprefixed, non-noshadow entries (default font shadow sprites)
+            if (name.startsWith("noshadow_") || name.contains(":")) continue;
+            if (name.startsWith("yellow--")) continue;
 
-            if (imageName.startsWith("yellow--")) {
-                String codepoint = imageName.substring("yellow--".length(), imageName.length() - 4);
-                int imgIndex = chatIconManager.chatIconIndex(entry.getValue());
-                if (imgIndex >= 0) {
-                    yellowByCodepoint.put(codepoint, imgIndex);
-                }
-            }
-        }
-
-        // Second pass: map every non-yellow default sprite to its yellow equivalent
-        for (Map.Entry<String, Integer> entry : charIds.entrySet()) {
-            String imageName = entry.getKey();
-            if (imageName.startsWith("noshadow_")) continue;
-            if (imageName.contains(":")) continue;
-
-            int dashIdx = imageName.indexOf("--");
+            int dashIdx = name.indexOf("--");
             if (dashIdx < 0) continue;
-            String codepoint = imageName.substring(dashIdx + 2, imageName.length() - 4);
-            int srcImgIndex = chatIconManager.chatIconIndex(entry.getValue());
-            Integer yellowImgIndex = yellowByCodepoint.get(codepoint);
-            if (srcImgIndex >= 0 && yellowImgIndex != null) {
-                toYellowMap.put(srcImgIndex, yellowImgIndex);
+            String codepoint = name.substring(dashIdx + 2); // "codepoint.png"
+            String yellowKey = "yellow--" + codepoint;
+
+            Integer yellowHash = charIds.get(yellowKey);
+            if (yellowHash != null) {
+                int srcIdx = chatIconManager.chatIconIndex(entry.getValue());
+                int yellowIdx = chatIconManager.chatIconIndex(yellowHash);
+                toYellowMap.put(srcIdx, yellowIdx);
             }
         }
     }
 
     /**
-     * Replace all <img=X> tags in the text with their yellow equivalents.
+     * Replace all img tags in the text with their yellow equivalents.
      */
     private String swapToYellow(String text) {
-        if (toYellowMap == null || toYellowMap.isEmpty() || text == null) {
-            return text;
+        if (text == null || !text.contains("<img=")) return text;
+
+        if (toYellowMap == null) {
+            buildColorSwapMap();
         }
+
         Matcher matcher = IMG_TAG_PATTERN.matcher(text);
         StringBuffer sb = new StringBuffer();
         while (matcher.find()) {
@@ -137,7 +117,7 @@ public class MenuEntryHighlightOverlay extends Overlay {
             return null;
         }
 
-        // Lazily build the color swap map
+        // Build the color swap map on first use
         if (toYellowMap == null) {
             buildColorSwapMap();
         }
