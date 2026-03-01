@@ -2,6 +2,7 @@ package com.RuneLingual.Widgets;
 
 import com.RuneLingual.*;
 import com.RuneLingual.SQL.SqlQuery;
+import com.RuneLingual.SQL.SqlVariables;
 import com.RuneLingual.commonFunctions.Colors;
 import com.RuneLingual.commonFunctions.Transformer;
 import com.RuneLingual.commonFunctions.Transformer.TransformOption;
@@ -189,17 +190,36 @@ public class DialogTranslator {
     }
 
     public void handleDialogs(Widget widget) {
-        if(widget.getText().contains("<img=")) {
+        // Allow continue/please-wait widgets through even if already translated to <img=> tags,
+        // so hover color can be updated each frame
+        boolean isContinueWidget = widget.getId() == npcContinueWidgetId
+                || widget.getId() == playerContinueWidgetId
+                || (WidgetUtil.componentToInterface(widget.getId()) == 162
+                    && (widget.getId() & 0xFFFF) == 43);
+        if(widget.getText().contains("<img=") && !isContinueWidget) {
             return;
         }
         dialogOption = MenuCapture.getTransformOption(plugin.getConfig().getNpcDialogueConfig(), plugin.getConfig().getSelectedLanguage());
         npcNameOption = MenuCapture.getTransformOption(plugin.getConfig().getNPCNamesConfig(), plugin.getConfig().getSelectedLanguage());
-        if ((widget.getId() != npcNameWidgetId && dialogOption.equals(TransformOption.AS_IS))
-                || (widget.getId() == npcNameWidgetId && npcNameOption.equals(TransformOption.AS_IS))) {
-            return;
-        }
 
         int interfaceID = WidgetUtil.componentToInterface(widget.getId());
+        boolean isSpriteDialog = interfaceID == 162; // DIALOG_SPRITE (examine text overlay)
+
+        // For sprite dialogues, use game messages config (examine text) rather than NPC dialogue config
+        if (isSpriteDialog) {
+            TransformOption gameMessagesOption = MenuCapture.getTransformOption(plugin.getConfig().getGameMessagesConfig(), plugin.getConfig().getSelectedLanguage());
+            if (gameMessagesOption.equals(TransformOption.AS_IS)) return;
+        } else if (widget.getId() == npcNameWidgetId) {
+            if (npcNameOption.equals(TransformOption.AS_IS)) return;
+        } else {
+            if (dialogOption.equals(TransformOption.AS_IS)) return;
+        }
+
+        // Sprite dialog — handle separately from NPC/player dialog
+        if (isSpriteDialog) {
+            handleSpriteDialog(widget);
+            return;
+        }
 
         // if the widget is the npc name widget, and the config is set to use api translation
         if (npcNameOption.equals(TransformOption.TRANSLATE_API) && widget.getId() == npcNameWidgetId) {
@@ -238,20 +258,13 @@ public class DialogTranslator {
         }
 
         // is not api translation
-        switch (interfaceID) {
-            case InterfaceID.DIALOG_NPC:
-                handleNpcDialog(widget);
-                return;
-            case InterfaceID.DIALOG_PLAYER:
-                handlePlayerDialog(widget);
-                return;
-            case InterfaceID.DIALOG_OPTION:
-                handleOptionDialog(widget);
-                return;
-            default:
-                break;
+        if (interfaceID == InterfaceID.DIALOG_NPC) {
+            handleNpcDialog(widget);
+        } else if (interfaceID == InterfaceID.DIALOG_PLAYER) {
+            handlePlayerDialog(widget);
+        } else if (interfaceID == InterfaceID.DIALOG_OPTION) {
+            handleOptionDialog(widget);
         }
-        //log.info("Unknown dialog widget: " + widget.getId());
     }
 
     // is not api translation
@@ -358,6 +371,105 @@ public class DialogTranslator {
         widgetsUtilRLingual.changeLineHeight(widget);
     }
 
+    /**
+     * Handle sprite dialogue widgets (e.g., examine text overlays on tutorial island,
+     * item/object info boxes). These show text + a sprite image + "Click here to continue".
+     */
+    private void handleSpriteDialog(Widget widget) {
+        String text = widget.getText();
+        if (text == null || text.isEmpty()) return;
+
+        // log.info("Sprite dialog raw text: '{}' widgetId={}", text, widget.getId());
+
+        // Strip tags for matching (text might have color tags like <col=0000ff>)
+        String cleanText = removeBrAndTags(text);
+
+        // Detect continue/please wait by text content or widget child index (43 = continue widget)
+        boolean isSpriteDialogContinue = (widget.getId() & 0xFFFF) == 43;
+        if (cleanText.equals(continueText) || cleanText.equals(pleaseWaitText) || isSpriteDialogContinue) {
+            // When re-processing already-translated text, cleanText won't match the English;
+            // always use continueText as the lookup key (child 43 is always the continue widget)
+            String englishKey = continueText;
+            Colors baseColor = continueTextColor;
+            if (cleanText.equals(pleaseWaitText)) {
+                englishKey = pleaseWaitText;
+                baseColor = pleaseWaitTextColor;
+            }
+            // Swap to white when mouse hovers over the widget
+            Colors color = isMouseOver(widget) ? Colors.white : baseColor;
+
+            // In the transcript TSV: category=dialogue, subCategory=manual
+            SqlQuery query = new SqlQuery(this.plugin);
+            query.setEnCatSubcat(englishKey,
+                    SqlVariables.categoryValue4Dialogue.getValue(),
+                    "manual",
+                    color);
+            setDialogueFontContext();
+            String translated;
+            try {
+                translated = transformer.transform(englishKey, color, TransformOption.TRANSLATE_LOCAL, query, false);
+            } finally {
+                resetFontContext();
+            }
+            String translatedClean = removeBrAndTags(translated);
+            if (translatedClean != null && !translatedClean.equals(englishKey) && !translatedClean.isEmpty()) {
+                setDialogText(widget, translated);
+                return;
+            }
+
+            log.info("Sprite dialog continue/wait: no translation found for '{}'", englishKey);
+            return;
+        }
+
+        // Any other text in the sprite dialog — typically examine text
+        text = cleanText;
+        log.info("Sprite dialog text: '{}' widgetId={}", text, widget.getId());
+
+        // Try examine_object lookup first
+        SqlQuery query = new SqlQuery(this.plugin);
+        query.setExamineTextObject(text);
+        setDialogueFontContext();
+        String translatedText;
+        try {
+            translatedText = transformer.transform(text, defaultTextColor, TransformOption.TRANSLATE_LOCAL, query, false);
+        } finally {
+            resetFontContext();
+        }
+
+        // If examine_object didn't find it, try examine_item
+        if (translatedText == null || translatedText.equals(text) || translatedText.isEmpty()) {
+            query = new SqlQuery(this.plugin);
+            query.setExamineTextItem(text);
+            setDialogueFontContext();
+            try {
+                translatedText = transformer.transform(text, defaultTextColor, TransformOption.TRANSLATE_LOCAL, query, false);
+            } finally {
+                resetFontContext();
+            }
+        }
+
+        // If still not found, try as a generic dialogue
+        if (translatedText == null || translatedText.equals(text) || translatedText.isEmpty()) {
+            query = new SqlQuery(this.plugin);
+            query.setDialogue(text, "", false, defaultTextColor);
+            setDialogueFontContext();
+            try {
+                translatedText = transformer.transform(text, defaultTextColor, TransformOption.TRANSLATE_LOCAL, query, false);
+            } finally {
+                resetFontContext();
+            }
+        }
+
+        if (translatedText != null && !translatedText.equals(text) && !translatedText.isEmpty()) {
+            if (getDialogueFont() != null && DIALOGUE_FONTS.contains(getDialogueFont())) {
+                widgetsUtilRLingual.setWidgetText_NiceBr(widget, translatedText);
+            } else {
+                widgetsUtilRLingual.setWidgetText_NiceBr(widget, swapToNoShadow(translatedText));
+            }
+            widgetsUtilRLingual.changeLineHeight(widget);
+        }
+    }
+
     private String getInteractingNpcName() {
         NPC npc = plugin.getInteractedNpc();
         if (npc == null) {
@@ -367,11 +479,19 @@ public class DialogTranslator {
     }
 
     private String getContinueTranslation() {
+        return getContinueTranslation(continueTextColor);
+    }
+
+    private String getContinueTranslation(Colors color) {
+        // TSV stores these under category=dialogue, subCategory=manual
         SqlQuery query = new SqlQuery(this.plugin);
-        query.setDialogue(continueText, "", true, continueTextColor);
+        query.setEnCatSubcat(continueText,
+                SqlVariables.categoryValue4Dialogue.getValue(),
+                "manual",
+                color);
         setDialogueFontContext();
         try {
-            return transformer.transform(continueText, continueTextColor, dialogOption, query, false);
+            return transformer.transform(continueText, color, dialogOption, query, false);
         } finally {
             resetFontContext();
         }
@@ -379,7 +499,10 @@ public class DialogTranslator {
 
     private String getSelectOptionTranslation() {
         SqlQuery query = new SqlQuery(this.plugin);
-        query.setDialogue(selectOptionText, "", true, nameAndSelectOptionTextColor);
+        query.setEnCatSubcat(selectOptionText,
+                SqlVariables.categoryValue4Dialogue.getValue(),
+                "manual",
+                nameAndSelectOptionTextColor);
         setDialogueFontContext();
         try {
             return transformer.transform(selectOptionText, nameAndSelectOptionTextColor, dialogOption, query, false);
@@ -389,21 +512,50 @@ public class DialogTranslator {
     }
 
     private String getPleaseWaitTranslation() {
+        return getPleaseWaitTranslation(pleaseWaitTextColor);
+    }
+
+    private String getPleaseWaitTranslation(Colors color) {
         SqlQuery query = new SqlQuery(this.plugin);
-        query.setDialogue(pleaseWaitText, "", true, pleaseWaitTextColor);
+        query.setEnCatSubcat(pleaseWaitText,
+                SqlVariables.categoryValue4Dialogue.getValue(),
+                "manual",
+                color);
         setDialogueFontContext();
         try {
-            return transformer.transform(pleaseWaitText, pleaseWaitTextColor, dialogOption, query, false);
+            return transformer.transform(pleaseWaitText, color, dialogOption, query, false);
         } finally {
             resetFontContext();
         }
     }
 
     private void translateContinueWidget(Widget widget) {
-        if (widget.getText().equals(continueText)) {
-            setDialogText(widget, getContinueTranslation());
-        } else if (widget.getText().equals(pleaseWaitText)) {
-            setDialogText(widget, getPleaseWaitTranslation());
+        String widgetText = widget.getText();
+        // Match by text content OR by widget ID (for already-translated <img=> text)
+        boolean isContinue = widgetText.equals(continueText)
+                || (widgetText.contains("<img=") && (widget.getId() == npcContinueWidgetId || widget.getId() == playerContinueWidgetId));
+        boolean isPleaseWait = widgetText.equals(pleaseWaitText);
+
+        if (isContinue) {
+            if (isMouseOver(widget)) {
+                setDialogText(widget, getContinueTranslation(Colors.white));
+            } else {
+                setDialogText(widget, getContinueTranslation());
+            }
+        } else if (isPleaseWait) {
+            if (isMouseOver(widget)) {
+                setDialogText(widget, getPleaseWaitTranslation(Colors.white));
+            } else {
+                setDialogText(widget, getPleaseWaitTranslation());
+            }
         }
+    }
+
+    /** Check if the mouse cursor is currently over the given widget. */
+    private boolean isMouseOver(Widget widget) {
+        net.runelite.api.Point mousePos = client.getMouseCanvasPosition();
+        java.awt.Rectangle bounds = widget.getBounds();
+        if (mousePos == null || bounds == null) return false;
+        return bounds.contains(mousePos.getX(), mousePos.getY());
     }
 }

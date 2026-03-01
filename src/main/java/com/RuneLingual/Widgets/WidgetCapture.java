@@ -108,12 +108,23 @@ public class WidgetCapture {
 
         // translate the widget text////////////////
         // dialogues are handled separately
-        if (widgetGroup == WidgetUtil.componentToInterface(ChatLeft.NAME)
+        boolean isDialogWidget = widgetGroup == WidgetUtil.componentToInterface(ChatLeft.NAME)
                 || widgetGroup == WidgetUtil.componentToInterface(ChatRight.NAME)
-                || widgetGroup == WidgetUtil.componentToInterface(Chatmenu.OPTIONS)) {
+                || widgetGroup == WidgetUtil.componentToInterface(Chatmenu.OPTIONS);
+        if (isDialogWidget) {
             dialogTranslator.handleDialogs(widget);
-            //alignIfChatButton(widget);
             return;
+        }
+
+        // Sprite dialog (group 162) shares the chatbox interface — only route
+        // the specific sprite dialog child widgets (child index 42=text, 43=continue)
+        if (widgetGroup == 162) {
+            int childIndex = widgetId & 0xFFFF;
+            if (childIndex == 42 || childIndex == 43) {
+                dialogTranslator.handleDialogs(widget);
+                return;
+            }
+            // Other children in group 162 (chat tabs, etc.) fall through to normal widget translation
         }
 
         if(shouldTranslateWidget(widget)) {
