@@ -417,13 +417,13 @@ public class DialogTranslator {
                 return;
             }
 
-            log.info("Sprite dialog continue/wait: no translation found for '{}'", englishKey);
+            // log.info("Sprite dialog continue/wait: no translation found for '{}'", englishKey);
             return;
         }
 
         // Any other text in the sprite dialog — typically examine text
         text = cleanText;
-        log.info("Sprite dialog text: '{}' widgetId={}", text, widget.getId());
+        // log.info("Sprite dialog text: '{}' widgetId={}", text, widget.getId());
 
         // Try examine_object lookup first
         SqlQuery query = new SqlQuery(this.plugin);
@@ -531,10 +531,11 @@ public class DialogTranslator {
 
     private void translateContinueWidget(Widget widget) {
         String widgetText = widget.getText();
+        String cleanWidgetText = removeBrAndTags(widgetText);
         // Match by text content OR by widget ID (for already-translated <img=> text)
-        boolean isContinue = widgetText.equals(continueText)
+        boolean isContinue = cleanWidgetText.equals(continueText)
                 || (widgetText.contains("<img=") && (widget.getId() == npcContinueWidgetId || widget.getId() == playerContinueWidgetId));
-        boolean isPleaseWait = widgetText.equals(pleaseWaitText);
+        boolean isPleaseWait = cleanWidgetText.equals(pleaseWaitText);
 
         if (isContinue) {
             if (isMouseOver(widget)) {
