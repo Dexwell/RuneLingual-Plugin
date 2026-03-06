@@ -117,10 +117,10 @@ public class WidgetCapture {
         }
 
         // Sprite dialog (group 162) shares the chatbox interface — only route
-        // the specific sprite dialog child widgets (child index 42=text, 43=continue)
+        // the specific sprite dialog child widgets (42=examine text, 43=examine text, 44=continue)
         if (widgetGroup == 162) {
             int childIndex = widgetId & 0xFFFF;
-            if (childIndex == 42 || childIndex == 43) {
+            if (childIndex == 42 || childIndex == 43 || childIndex == 44) {
                 dialogTranslator.handleDialogs(widget);
                 return;
             }

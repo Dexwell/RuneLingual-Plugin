@@ -114,6 +114,12 @@ public class MouseTooltipOverlay extends Overlay
             return null;
         }
 
+        // The top-left hover text is always translated in onBeforeRender,
+        // so the tooltip overlay is only needed for API translation pending states.
+        if (!this.plugin.getConfig().ApiConfig()) {
+            return null;
+        }
+
         MenuEntry[] menuEntries = client.getMenuEntries();
         int last = menuEntries.length - 1;
 
@@ -132,19 +138,11 @@ public class MouseTooltipOverlay extends Overlay
             return null;
         }
 
-        // if is set to be translated with API,
-        if(this.plugin.getConfig().ApiConfig()){
-            // only translate if it has been translated before
-            if(plugin.getDeepl().getDeeplPastTranslationManager().haveTranslatedMenuBefore(option, target, menuEntry)) {
-                setMouseHover(menuEntry, true);
-            } else { // dont translate if it hasnt been translated before
-                setMouseHover(menuEntry, false);
-                return null;
-            }
-        } else {
-            // translate with local data if not set to use API
+        // API mode: show tooltip if translation has been done before
+        if(plugin.getDeepl().getDeeplPastTranslationManager().haveTranslatedMenuBefore(option, target, menuEntry)) {
             setMouseHover(menuEntry, true);
-            return null;
+        } else {
+            setMouseHover(menuEntry, false);
         }
         return null;
     }
@@ -218,8 +216,9 @@ public class MouseTooltipOverlay extends Overlay
             return false;
         }
 
-//        // Trivial options that don't need to be highlighted, add more as they appear.
-        if (option.equals("Walk here") || option.equals("Cancel") || option.equals("Continue") || target.contains("Slide"))
+        // Trivial actions that don't need a separate tooltip near the cursor
+        // Use MenuAction type since the option text may already be translated
+        if (type == MenuAction.WALK || type == MenuAction.CANCEL || target.contains("Slide"))
             return false;
         if (!config.getMouseHoverConfig())
         {

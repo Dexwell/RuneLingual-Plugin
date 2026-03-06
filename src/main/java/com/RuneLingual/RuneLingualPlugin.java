@@ -6,6 +6,8 @@ import com.RuneLingual.MouseOverlays.MenuEntryHighlightOverlay;
 import com.RuneLingual.MouseOverlays.MouseTooltipOverlay;
 import com.RuneLingual.SQL.SqlActions;
 import com.RuneLingual.SQL.SqlQuery;
+import com.RuneLingual.SQL.SqlVariables;
+import com.RuneLingual.commonFunctions.Colors;
 import com.RuneLingual.Widgets.PartialTranslationManager;
 import com.RuneLingual.Widgets.Widget2ModDict;
 import com.RuneLingual.Widgets.WidgetCapture;
@@ -188,6 +190,10 @@ public class RuneLingualPlugin extends Plugin {
     // stores selected languages during this session, to prevent re-initializing char images
     private final Set<LangCodeSelectableList> pastLanguages = new HashSet<>();
 
+    // Pattern to match "X more options" / "1 more option"
+    private static final java.util.regex.Pattern MORE_OPTIONS_PATTERN =
+            java.util.regex.Pattern.compile("(\\d+) more options?");
+
     @Override
     protected void startUp() throws Exception {
         //get selected language
@@ -243,45 +249,99 @@ public class RuneLingualPlugin extends Plugin {
 
         chatInputRLingual.updateChatInput();
         widgetCapture.translateWidget();
+    }
 
-        // When English hover text is disabled, replace the top menu entry's
-        // option/target with translated text before the game draws it.
-        if (!config.getEnableEnglishHoverConfig() && !client.isMenuOpen()) {
-            MenuEntry[] menuEntries = client.getMenuEntries();
-            if (menuEntries.length > 0) {
-                MenuEntry top = menuEntries[menuEntries.length - 1];
-                String option = top.getOption();
-                if (option != null && !option.isEmpty()
-                        && !option.equals("Walk here") && !option.equals("Cancel") && !option.equals("Continue")) {
+    /**
+     * PostMenuSort fires after the game finishes building and sorting menu entries.
+     * This is the correct hook for modifying menu entry text — used by RuneLite's own
+     * Menu Entry Swapper plugin. Modifications here persist because they happen after
+     * the game's final menu rebuild for this tick.
+     */
+    @Subscribe(priority = -1)
+    public void onPostMenuSort(PostMenuSort event) {
+        if (targetLanguage == LangCodeSelectableList.ENGLISH) {
+            return;
+        }
+        if (client.isMenuOpen()) {
+            return; // onMenuOpened handles the open right-click menu
+        }
 
-                    // Skill tab hover: use plain12 + noshadow (light background tooltip)
-                    boolean isSkillTabHover = isHoverInSkillsTab(top);
-                    if (isSkillTabHover) {
-                        if (charImageInit.isMultiFontMode() && charImageInit.hasFontAvailable("plain12")) {
-                            generalFunctions.setCurrentFont("plain12");
-                        }
-                        generalFunctions.setCurrentUseShadow(false);
-                    }
-                    try {
-                        String[] translated = menuCapture.translateMenuAction(top);
-                        if (translated != null) {
-                            if (targetLanguage.needsSwapMenuOptionAndTarget()) {
-                                top.setOption(translated[0] != null && !translated[0].isEmpty() ? translated[0] : translated[1]);
-                                top.setTarget(translated[0] != null && !translated[0].isEmpty() ? translated[1] : "");
-                            } else {
-                                top.setOption(translated[1]);
-                                top.setTarget(translated[0] != null ? translated[0] : "");
-                            }
-                        }
-                    } finally {
-                        if (isSkillTabHover) {
-                            generalFunctions.setCurrentFont(null);
-                            generalFunctions.setCurrentUseShadow(true);
-                        }
-                    }
+        MenuEntry[] menuEntries = client.getMenuEntries();
+        if (menuEntries.length == 0) {
+            return;
+        }
+
+        // Only translate the TOP entry (last in array) — this is what the game displays
+        // in the top-left hover text and near the cursor.
+        MenuEntry top = menuEntries[menuEntries.length - 1];
+        String option = top.getOption();
+        MenuAction menuType = top.getType();
+
+        // Skip Walk here / Cancel — these are trivial actions where the cursor box
+        // near the mouse would be distracting. Primary actions still get translated.
+        if (menuType == MenuAction.WALK || menuType == MenuAction.CANCEL) {
+            return;
+        }
+
+        if (option == null || option.isEmpty() || option.contains("<img=")) {
+            return;
+        }
+
+        // Skill tab hover: use plain12 + noshadow (light background tooltip)
+        boolean isSkillTabHover = isHoverInSkillsTab(top);
+        if (isSkillTabHover) {
+            if (charImageInit.isMultiFontMode() && charImageInit.hasFontAvailable("plain12")) {
+                generalFunctions.setCurrentFont("plain12");
+            }
+            generalFunctions.setCurrentUseShadow(false);
+        }
+        try {
+            String[] translated = menuCapture.translateMenuAction(top);
+            if (translated != null) {
+                if (targetLanguage.needsSwapMenuOptionAndTarget()) {
+                    top.setOption(translated[0] != null && !translated[0].isEmpty() ? translated[0] : translated[1]);
+                    top.setTarget(translated[0] != null && !translated[0].isEmpty() ? translated[1] : "");
+                } else {
+                    top.setOption(translated[1]);
+                    top.setTarget(translated[0] != null ? translated[0] : "");
                 }
             }
+        } finally {
+            if (isSkillTabHover) {
+                generalFunctions.setCurrentFont(null);
+                generalFunctions.setCurrentUseShadow(true);
+            }
         }
+    }
+
+    /**
+     * Translate "X more options" text.
+     * Looks up "more options" in the transcript (category=dialogue, subCategory=manual)
+     * Uses {0} placeholder in the translation for the count number.
+     * e.g. TSV: "more options" → "他に{0}つのオプション" → "他に3つのオプション"
+     * If no {0} placeholder, prepends the count: "3 translatedText"
+     */
+    private String getMoreOptionsTranslation(String count) {
+        SqlQuery query = new SqlQuery(this);
+        query.setEnCatSubcat("more options",
+                SqlVariables.categoryValue4Interface.getValue(),
+                "generalUI",
+                Colors.white);
+        com.RuneLingual.commonFunctions.Transformer.TransformOption option =
+                MenuCapture.getTransformOption(config.getMenuOptionConfig(), config.getSelectedLanguage());
+        String translated = new com.RuneLingual.commonFunctions.Transformer(this)
+                .transform("more options", Colors.white, option, query, false);
+        if (translated != null && !translated.isEmpty()) {
+            String clean = WidgetsUtilRLingual.removeBrAndTags(translated);
+            if (!clean.equals("more options")) {
+                // Support {0} placeholder for number position
+                if (translated.contains("{0}")) {
+                    return translated.replace("{0}", count);
+                }
+                return count + " " + translated;
+            }
+        }
+        return null;
     }
 
     /** Check if a menu entry's widget belongs to the skills tab interface. */

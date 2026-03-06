@@ -76,7 +76,7 @@ public class Ids {
     private final int widgetIdBehindLoginScreen = ToplevelDisplay.LAYERS;
 
     //general interface
-    private final int widgetIdSkillGuide = SkillGuide.UNIVERSE;
+    private final int widgetIdSkillGuide = -1; // TODO: SkillGuide.UNIVERSE was removed from current RuneLite API
     private final Set<Integer> rootWidgetIdSet = Set.of(ToplevelPreEoc.GAMEFRAME, ToplevelOsrsStretch.GAMEFRAME, Toplevel.GAMEFRAME);
 
     /* example for adding set of widget ids

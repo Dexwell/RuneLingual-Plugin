@@ -191,12 +191,13 @@ public class DialogTranslator {
 
     public void handleDialogs(Widget widget) {
         // Allow continue/please-wait widgets through even if already translated to <img=> tags,
-        // so hover color can be updated each frame
+        // so hover color can be updated each frame.
+        // Also allow sprite dialog (group 162) through so handleSpriteDialog can manage hover.
         boolean isContinueWidget = widget.getId() == npcContinueWidgetId
-                || widget.getId() == playerContinueWidgetId
-                || (WidgetUtil.componentToInterface(widget.getId()) == 162
-                    && (widget.getId() & 0xFFFF) == 43);
-        if(widget.getText().contains("<img=") && !isContinueWidget) {
+                || widget.getId() == playerContinueWidgetId;
+        int interfaceID_early = WidgetUtil.componentToInterface(widget.getId());
+        boolean isSpriteDialog_early = interfaceID_early == 162;
+        if(widget.getText().contains("<img=") && !isContinueWidget && !isSpriteDialog_early) {
             return;
         }
         dialogOption = MenuCapture.getTransformOption(plugin.getConfig().getNpcDialogueConfig(), plugin.getConfig().getSelectedLanguage());
@@ -379,16 +380,15 @@ public class DialogTranslator {
         String text = widget.getText();
         if (text == null || text.isEmpty()) return;
 
-        // log.info("Sprite dialog raw text: '{}' widgetId={}", text, widget.getId());
-
+        int childIdx = widget.getId() & 0xFFFF;
         // Strip tags for matching (text might have color tags like <col=0000ff>)
         String cleanText = removeBrAndTags(text);
 
-        // Detect continue/please wait by text content or widget child index (43 = continue widget)
-        boolean isSpriteDialogContinue = (widget.getId() & 0xFFFF) == 43;
+        // Detect continue/please wait by text content or widget child index (44 = continue widget)
+        boolean isSpriteDialogContinue = childIdx == 44;
         if (cleanText.equals(continueText) || cleanText.equals(pleaseWaitText) || isSpriteDialogContinue) {
             // When re-processing already-translated text, cleanText won't match the English;
-            // always use continueText as the lookup key (child 43 is always the continue widget)
+            // always use continueText as the lookup key (child 44 is the continue widget)
             String englishKey = continueText;
             Colors baseColor = continueTextColor;
             if (cleanText.equals(pleaseWaitText)) {
@@ -418,6 +418,11 @@ public class DialogTranslator {
             }
 
             // log.info("Sprite dialog continue/wait: no translation found for '{}'", englishKey);
+            return;
+        }
+
+        // Already-translated examine text — skip re-processing
+        if (text.contains("<img=")) {
             return;
         }
 
